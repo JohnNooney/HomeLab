@@ -62,6 +62,6 @@ To recreate this environment from scratch, the infrastructure must be deployed i
     - Observability:
         - kube-prometheus-stack (Grafana/Prometheus).
     - Media & Downloads:
-        - Plex, Sonarr, Radarr, Prowlarr, qBittorrent, Transmission.
+        - Plex, Sonarr, Radarr, Prowlarr, Lidarr,Bazarr, Transmission.
     - Services:
         - Home Assistant, Immich.
