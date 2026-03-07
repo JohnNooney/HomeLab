@@ -1,16 +1,19 @@
 # Overview
-This directory contains Ansible playbooks and roles for provisioning and configuring the bare-metal Ubuntu nodes that will host the Kubernetes cluster.
+This directory contains Ansible playbooks and roles for provisioning and configuring Ubuntu VMs running on Proxmox that will host the Kubernetes cluster.
 
-## Phase 2: Bare-Metal Provisioning (Ansible)
+## Phase 2: VM Provisioning (Ansible)
 
-This phase prepares the physical/virtual Ubuntu servers to run Kubernetes by installing dependencies, hardening the OS, and configuring networking.
+This phase prepares the Ubuntu VMs on Proxmox to run Kubernetes by installing dependencies, hardening the OS, and configuring networking.
 
 ### Prerequisites
-- Ubuntu 22.04 LTS (or later) installed on all nodes
-- SSH access to all nodes with sudo privileges
+- Proxmox VE hypervisor installed and configured
+- Ubuntu 22.04 LTS (or later) VMs created on Proxmox
+- SSH access to all VMs with sudo privileges
 - Ansible >= 2.10 installed on control machine
-- Inventory file configured with node IP addresses and roles
-- Python 3 installed on all target nodes
+- Inventory file configured with VM IP addresses and roles
+- Python 3 installed on all target VMs
+
+**Note**: VM creation on Proxmox can be done manually via the Proxmox web UI, CLI (`qm create`), or automated using Terraform with the Telmate Proxmox provider.
 
 ### Inventory Setup
 
@@ -34,7 +37,7 @@ all:
 ### Deployment Steps
 
 #### 2.1 System Updates and Hardening
-**Purpose**: Update packages, configure security settings, and harden the OS.
+**Purpose**: Update packages, configure security settings, and harden the Ubuntu VMs.
 
 ```bash
 cd ansible
@@ -58,30 +61,11 @@ ansible-playbook -i inventory/hosts.yml playbooks/01-system-update.yml
 - 10250-10252 (Kubelet, kube-scheduler, kube-controller)
 - 30000-32767 (NodePort services)
 
-#### 2.2 Host Management Tools
-**Purpose**: Install Cockpit for web-based server management.
-
-```bash
-ansible-playbook -i inventory/hosts.yml playbooks/02-cockpit.yml
-```
-
-**Tasks Performed**:
-- Install Cockpit and required modules
-- Enable and start Cockpit service
-- Configure firewall for Cockpit (port 9090)
-- Set up SSL certificates (optional)
-- Install additional Cockpit plugins:
-  - cockpit-podman
-  - cockpit-machines
-  - cockpit-networkmanager
-
-**Access**: `https://<node-ip>:9090`
-
-#### 2.3 Networking Configuration
+#### 2.2 Networking Configuration
 **Purpose**: Configure networking requirements for Kubernetes.
 
 ```bash
-ansible-playbook -i inventory/hosts.yml playbooks/03-networking.yml
+ansible-playbook -i inventory/hosts.yml playbooks/02-networking.yml
 ```
 
 **Tasks Performed**:
@@ -95,7 +79,7 @@ ansible-playbook -i inventory/hosts.yml playbooks/03-networking.yml
 - Disable IPv6 (optional, if not needed)
 - Set up static IP addresses (if required)
 
-#### 2.4 Disable Swap
+#### 2.3 Disable Swap
 **Purpose**: Disable swap as required by Kubernetes.
 
 ```bash
@@ -108,7 +92,7 @@ ansible-playbook -i inventory/hosts.yml playbooks/04-disable-swap.yml
 - Verify swap is disabled
 - Persist configuration across reboots
 
-#### 2.5 Container Runtime Installation
+#### 2.4 Container Runtime Installation
 **Purpose**: Install and configure containerd as the container runtime.
 
 ```bash
@@ -130,7 +114,7 @@ ansible-playbook -i inventory/hosts.yml playbooks/05-containerd.yml
   SystemdCgroup = true
 ```
 
-#### 2.6 Kubernetes Components Installation
+#### 2.5 Kubernetes Components Installation
 **Purpose**: Install kubeadm, kubelet, and kubectl.
 
 ```bash
@@ -145,7 +129,7 @@ ansible-playbook -i inventory/hosts.yml playbooks/06-kubernetes-install.yml
 - Configure kubelet extra args if needed
 - Verify installation versions
 
-#### 2.7 Initialize Kubernetes Control Plane
+#### 2.6 Initialize Kubernetes Control Plane
 **Purpose**: Bootstrap the Kubernetes control plane on master node(s).
 
 ```bash
@@ -165,7 +149,7 @@ ansible-playbook -i inventory/hosts.yml playbooks/07-control-plane-init.yml
 - Control plane node will be in NotReady state until CNI is deployed (Phase 3)
 - Join token saved to `/tmp/kubernetes-join-command`
 
-#### 2.8 Join Worker Nodes
+#### 2.7 Join Worker Nodes
 **Purpose**: Join worker nodes to the Kubernetes cluster.
 
 ```bash
@@ -222,4 +206,63 @@ crictl images
 
 ### Next Steps
 
-After bare-metal provisioning is complete, proceed to **Phase 3: Cluster Bootstrapping** to deploy the CNI and essential cluster services.
+After VM provisioning is complete, proceed to **Phase 3: Cluster Bootstrapping** to deploy the CNI and essential cluster services.
+
+## Proxmox Integration Notes
+
+### VM Creation Options
+
+**Option 1: Manual VM Creation (Proxmox Web UI)**
+1. Access Proxmox web interface at `https://<proxmox-ip>:8006`
+2. Create VMs with recommended specs:
+   - **Control Plane**: 4 vCPUs, 8GB RAM, 50GB disk
+   - **Worker Nodes**: 8 vCPUs, 16GB RAM, 100GB+ disk
+3. Install Ubuntu 22.04 LTS from ISO
+4. Configure static IPs or DHCP reservations
+5. Enable SSH and create initial user
+
+**Option 2: Automated VM Creation (Terraform + Proxmox Provider)**
+```hcl
+# Example Terraform configuration for Proxmox VMs
+resource "proxmox_vm_qemu" "k8s_master" {
+  name        = "k8s-master-01"
+  target_node = "proxmox-node"
+  clone       = "ubuntu-22.04-template"
+  cores       = 4
+  memory      = 8192
+  disk {
+    size    = "50G"
+    storage = "local-lvm"
+  }
+}
+```
+
+**VM Distribution**:
+- VMs can be distributed across both Proxmox nodes
+- Kubernetes control plane and worker VMs spread for redundancy
+- Shared storage (NAS) accessible from both nodes via NFS/iSCSI
+
+### Proxmox Cluster Architecture
+
+This HomeLab uses a **2-node Proxmox VE cluster** for high availability and resource distribution:
+
+**Physical Setup**:
+- **Node 1 (proxmox-01)**: Physical server running Proxmox VE
+- **Node 2 (proxmox-02)**: Physical server running Proxmox VE
+- **Cluster Configuration**: Both nodes joined in a Proxmox cluster for centralized management
+
+**VM Distribution**:
+- VMs can be distributed across both Proxmox nodes
+- Kubernetes control plane and worker VMs spread for redundancy
+- Shared storage (NAS) accessible from both nodes via NFS/iSCSI
+
+### Proxmox Best Practices
+
+- **Cluster Setup**: Configure 2-node cluster with proper quorum device (QDevice) to avoid split-brain
+- **CPU Allocation**: Use host CPU type for better performance
+- **Memory**: Enable ballooning for dynamic memory allocation
+- **Storage**: Use LVM-thin or ZFS for VM disks; configure shared storage for live migration
+- **Networking**: Configure bridge networking (vmbr0) on both nodes for VM connectivity
+- **Backups**: Set up automated VM backups via Proxmox Backup Server
+- **HA**: Enable HA for critical VMs (requires proper fencing and shared storage)
+- **Updates**: Keep both Proxmox nodes on the same version for cluster stability

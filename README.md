@@ -4,17 +4,18 @@ Infrastructure and Documentation for my HomeLab setup
 
 # HomeLab Overview
 
-This repository contains the Infrastructure as Code (IaC), configuration management, and deployment manifests for a production-like hybrid cloud homelab. The goal of this project is to apply enterprise-grade DevOps practices—such as state management, secret injection, automated DNS, and GitOps—to a local bare-metal environment.
+This repository contains the Infrastructure as Code (IaC), configuration management, and deployment manifests for a production-like hybrid cloud homelab. The goal of this project is to apply enterprise-grade DevOps practices—such as state management, secret injection, automated DNS, and GitOps—to a virtualized on-premises environment.
 
-By utilizing a Hybrid Cloud Architecture, heavy compute and storage workloads run locally to avoid cloud egress and compute fees, while control plane, state, and security components are offloaded to AWS to ensure high availability and security.
+By utilizing a Hybrid Cloud Architecture, heavy compute and storage workloads run locally on Proxmox VMs to avoid cloud egress and compute fees, while control plane, state, and security components are offloaded to AWS to ensure high availability and security.
 
 ## Tech Stack
 | Domain | Tools Used | Purpose |
 |--------|------------|---------|
 | Cloud Provider | AWS (S3, DynamoDB, Route53, Secrets Manager, EC2) | State, Secrets, DNS, and Ingress routing. |
+| Hypervisor | Proxmox VE | Type-1 hypervisor for VM management and resource allocation. |
 | Infrastructure as Code | Terraform | Provisioning the AWS cloud foundation. |
-| Configuration Management | Ansible | Bootstrapping bare-metal Ubuntu nodes, OS hardening, and installing K8s prerequisites/Cockpit. |
-| Container Orchestration | Kubernetes (bare-metal) | Workload scheduling and application lifecycle management. |
+| Configuration Management | Ansible | Bootstrapping Ubuntu VMs, OS hardening, and installing K8s prerequisites. |
+| Container Orchestration | Kubernetes (on Proxmox VMs) | Workload scheduling and application lifecycle management. |
 | Deployment & Templating | Helm | Packaging and deploying Kubernetes manifests. |
 | Observability | Prometheus, Grafana | Cluster and application metrics scraping and visualization. |
 | Core Workloads | *Arr Stack, Plex, Immich, Home Assistant | Media streaming, photo backup, and home automation. |
@@ -27,8 +28,9 @@ The infrastructure is split into two distinct tiers:
     - Handles DNS zones and records.
     - Provides a secure, reverse-proxied ingress tunnel to the local network without port-forwarding the home router.
 
-2. Local Bare-Metal (Compute & Storage):
-    - A 2-node bare-metal Kubernetes cluster (on Ubuntu) running the application layer.
+2. Local On-Premises (Compute & Storage):
+    - 2-node Proxmox VE cluster running on physical hardware.
+    - Ubuntu VMs provisioned across Proxmox nodes hosting a Kubernetes cluster.
     - Integrates with a local NAS via persistent volume claims (NFS/iSCSI) for terabytes of media storage.
     - Synchronizes dynamically with AWS for external DNS and secrets.
 
@@ -53,12 +55,12 @@ Provision the AWS infrastructure required to support the HomeLab environment.
 
 ---
 
-### 2. Bare-Metal Provisioning (Ansible)
-Prepare the physical/virtual Ubuntu servers to run Kubernetes.
+### 2. VM Provisioning (Ansible)
+Prepare the Ubuntu VMs running on Proxmox to host the Kubernetes cluster.
 
 **Key Tasks**:
-- Update and harden local Ubuntu nodes
-- Install host management tools (Cockpit)
+- Provision Ubuntu VMs on Proxmox hypervisor
+- Update and harden Ubuntu VM nodes
 - Configure networking, disable swap, and install container runtimes (containerd)
 - Initialize the Kubernetes control plane and join worker nodes
 
