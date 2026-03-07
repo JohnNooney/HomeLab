@@ -40,28 +40,51 @@ The infrastructure is split into two distinct tiers:
 ## Deployment Phases
 To recreate this environment from scratch, the infrastructure must be deployed in the following order:
 
-1. **Cloud Foundation (Terraform)**
-    - Provision the S3 bucket and DynamoDB table for Terraform remote state.
-    - Create Route 53 hosted zones.
-    - Provision AWS Secrets Manager entries.
-    - Spin up the EC2 ingress tunnel node.
+### 1. Cloud Foundation (Terraform)
+Provision the AWS infrastructure required to support the HomeLab environment.
 
-2. **Bare-Metal Provisioning (Ansible)**
-    - Update and harden local Ubuntu nodes.
-    - Install host management tools (Cockpit).
-    - Configure networking, disable swap, and install container runtimes (containerd).
-    - Initialize the Kubernetes control plane and join worker nodes.
+**Key Tasks**:
+- Provision the S3 bucket and DynamoDB table for Terraform remote state
+- Create Route 53 hosted zones
+- Provision AWS Secrets Manager entries
+- Spin up the EC2 ingress tunnel node
 
-3. **Cluster Bootstrapping (Kubernetes/Helm)**
-    - Deploy the Container Network Interface (CNI - e.g., Calico/Cilium).
-    - Deploy external-dns to sync K8s ingresses with AWS Route 53.
-    - Deploy external-secrets-operator (ESO) to sync AWS Secrets Manager to K8s native secrets.
-    - Connect the cluster to the AWS EC2 ingress tunnel (Wireguard/Tailscale).
+ [Detailed deployment steps →](terraform/README.md)
 
-4. **Application Deployment (Helm)**
-    - Observability:
-        - kube-prometheus-stack (Grafana/Prometheus).
-    - Media & Downloads:
-        - Plex, Sonarr, Radarr, Prowlarr, Lidarr,Bazarr, Transmission.
-    - Services:
-        - Home Assistant, Immich.
+---
+
+### 2. Bare-Metal Provisioning (Ansible)
+Prepare the physical/virtual Ubuntu servers to run Kubernetes.
+
+**Key Tasks**:
+- Update and harden local Ubuntu nodes
+- Install host management tools (Cockpit)
+- Configure networking, disable swap, and install container runtimes (containerd)
+- Initialize the Kubernetes control plane and join worker nodes
+
+ [Detailed deployment steps →](ansible/README.md)
+
+---
+
+### 3. Cluster Bootstrapping (Kubernetes/Helm)
+Deploy foundational cluster services for networking, DNS, secrets, and ingress.
+
+**Key Tasks**:
+- Deploy the Container Network Interface (CNI - e.g., Calico/Cilium)
+- Deploy external-dns to sync K8s ingresses with AWS Route 53
+- Deploy external-secrets-operator (ESO) to sync AWS Secrets Manager to K8s native secrets
+- Connect the cluster to the AWS EC2 ingress tunnel (Wireguard/Tailscale)
+
+ [Detailed deployment steps →](kubernetes/README.md)
+
+---
+
+### 4. Application Deployment (Terraform + Helm)
+Deploy application workloads using Terraform to manage Helm releases from public chart repositories.
+
+**Applications**:
+- **Observability**: kube-prometheus-stack (Grafana/Prometheus)
+- **Media & Downloads**: Plex, Sonarr, Radarr, Prowlarr, Lidarr, Bazarr, Transmission
+- **Services**: Home Assistant, Immich
+
+ [Detailed deployment steps →](helm/README.md)
