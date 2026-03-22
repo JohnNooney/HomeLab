@@ -59,6 +59,17 @@ create_vm() {
 # Clone template
 qm clone $TEMPLATE_ID $VM_ID --name $VM_NAME --full
 
+# Configure CPUs and Memory
+if [[ "$VM_NAME" == *"control"* ]]; then
+    # Control plane: 2 CPUs, 4GB RAM
+    qm set $VM_ID --cores 2
+    qm set $VM_ID --memory 4096
+else
+    # Workers: 1 CPU, 2GB RAM
+    qm set $VM_ID --cores 1
+    qm set $VM_ID --memory 2048
+fi
+
 # Configure cloud-init
 qm set $VM_ID --ipconfig0 ip=$IP_ADDRESS/24,gw=192.168.100.1
 qm set $VM_ID --nameserver 8.8.8.8

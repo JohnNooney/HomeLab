@@ -15,9 +15,10 @@ This development environment allows you to:
 ### Hardware Requirements
 - **CPU**: Intel VT-x or AMD-V capable processor with nested virtualization support
 - **RAM**: Minimum 32GB (64GB+ recommended)
-  - Proxmox host VMs: 4GB each × 3 = 12GB
-  - Kubernetes VMs: 4GB each × 3 = 12GB
+  - Proxmox host VMs: 12GB each × 2 = 24GB
+  - Kubernetes VMs: 4GB control plane + 2GB workers × 3 = 10GB
   - Windows host overhead: ~8GB
+  - **Total**: ~42GB (64GB recommended for comfortable operation)
 - **Storage**: 200GB+ free disk space (SSD recommended)
 - **Network**: Stable internet connection for package downloads
 
@@ -105,8 +106,8 @@ A PowerShell script is provided to automate Proxmox VM creation: `dev/helper-scr
 
 This script creates Hyper-V VMs with:
 - 100GB disk (default, configurable)
-- 8GB RAM (default, configurable)
-- 2 vCPUs (default, configurable)
+- 12GB RAM (default, configurable)
+- 4 vCPUs (default, configurable)
 - Secure Boot disabled (required for Proxmox)
 
 ### 2.3 Create Proxmox Cluster Nodes
@@ -115,9 +116,9 @@ This script creates Hyper-V VMs with:
 # Navigate to the helper scripts directory
 cd D:\GitHub\HomeLab\dev\helper-scripts
 
-# Create Proxmox nodes with 100GB disks and 8GB RAM
-.\Create-ProxmoxVM.ps1 -VMName "pve-01" -IPAddress "192.168.100.11" -MemoryGB 8 -ProcessorCount 2 -DiskSizeGB 100
-.\Create-ProxmoxVM.ps1 -VMName "pve-02" -IPAddress "192.168.100.12" -MemoryGB 8 -ProcessorCount 2 -DiskSizeGB 100
+# Create Proxmox nodes with 100GB disks and 12GB RAM
+.\Create-ProxmoxVM.ps1 -VMName "pve-01" -IPAddress "192.168.100.11" -MemoryGB 12 -ProcessorCount 2 -DiskSizeGB 100
+.\Create-ProxmoxVM.ps1 -VMName "pve-02" -IPAddress "192.168.100.12" -MemoryGB 12 -ProcessorCount 2 -DiskSizeGB 100
 
 # Configure nested virtualization and MAC spoofing
 .\Configure-ProxmoxVMSettings.ps1 -VMNames "pve-01","pve-02"

@@ -5,7 +5,7 @@ param(
     [Parameter(Mandatory=$true)]
     [string]$IPAddress,
     
-    [int]$MemoryGB = 8,
+    [int]$MemoryGB = 12,
     [int]$ProcessorCount = 4,
     [int]$DiskSizeGB = 100
 )
