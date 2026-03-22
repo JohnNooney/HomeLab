@@ -6,7 +6,7 @@ TEMPLATE_NAME="ubuntu-k8s-template"
 CLOUD_IMAGE="/var/lib/vz/template/iso/jammy-server-cloudimg-amd64.img"
 
 # Create VM
-qm create $TEMPLATE_ID --name $TEMPLATE_NAME --memory 4096 --cores 2 --net0 virtio,bridge=vmbr0
+qm create $TEMPLATE_ID --name $TEMPLATE_NAME --memory 4096 --cores 1 --net0 virtio,bridge=vmbr0
 
 # Import cloud image as disk
 qm importdisk $TEMPLATE_ID $CLOUD_IMAGE local-lvm

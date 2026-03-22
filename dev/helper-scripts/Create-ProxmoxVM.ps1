@@ -6,7 +6,7 @@ param(
     [string]$IPAddress,
     
     [int]$MemoryGB = 8,
-    [int]$ProcessorCount = 2,
+    [int]$ProcessorCount = 4,
     [int]$DiskSizeGB = 100
 )
 

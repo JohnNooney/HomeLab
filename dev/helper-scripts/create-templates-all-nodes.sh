@@ -13,8 +13,8 @@ CLOUD_IMAGE_NAME="jammy-server-cloudimg-amd64.img"
 
 # Node configuration - Add your Proxmox nodes here
 declare -A NODES
-NODES["pve"]="172.25.37.31:9000"      # Format: IP:TEMPLATE_ID
-NODES["pve2"]="172.25.40.129:9001"    # Each node gets unique template ID
+NODES["pve-01"]="192.168.100.11:9000"      # Format: IP:TEMPLATE_ID
+NODES["pve-02"]="192.168.100.12:9001"    # Each node gets unique template ID
 
 # Function to create template on a specific node
 create_template_on_node() {
@@ -51,7 +51,7 @@ fi
 
 # Create VM
 echo "Creating VM with ID $TEMPLATE_ID..."
-qm create $TEMPLATE_ID --name ubuntu-k8s-template --memory 4096 --cores 2 --net0 virtio,bridge=vmbr0
+qm create $TEMPLATE_ID --name ubuntu-k8s-template --memory 4096 --cores 1 --net0 virtio,bridge=vmbr0
 
 # Import cloud image as disk
 echo "Importing cloud image..."

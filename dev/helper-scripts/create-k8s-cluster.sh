@@ -18,13 +18,13 @@ SSH_KEY="ssh-rsa AAAAB3... your-key-here"  # REPLACE THIS with your actual publi
 
 # Node IP mapping - Update these with your actual Proxmox node IPs
 declare -A NODE_IPS
-NODE_IPS["pve"]="172.25.37.31"
-NODE_IPS["pve2"]="172.25.40.129"
+NODE_IPS["pve-01"]="192.168.100.11"
+NODE_IPS["pve-02"]="192.168.100.12"
 
 # Template ID mapping - Each node has its own template with unique ID
 declare -A TEMPLATE_IDS
-TEMPLATE_IDS["pve"]=9000
-TEMPLATE_IDS["pve2"]=9001
+TEMPLATE_IDS["pve-01"]=9000
+TEMPLATE_IDS["pve-02"]=9001
 
 # Function to create VM
 create_vm() {
@@ -60,7 +60,7 @@ create_vm() {
 qm clone $TEMPLATE_ID $VM_ID --name $VM_NAME --full
 
 # Configure cloud-init
-qm set $VM_ID --ipconfig0 ip=$IP_ADDRESS/24,gw=172.25.32.1
+qm set $VM_ID --ipconfig0 ip=$IP_ADDRESS/24,gw=192.168.100.1
 qm set $VM_ID --nameserver 8.8.8.8
 qm set $VM_ID --sshkeys /tmp/ssh_key_$VM_ID.pub
 qm set $VM_ID --ciuser ubuntu
@@ -81,12 +81,12 @@ EOF
 }
 
 # Create control plane nodes
-create_vm 101 "k8s-control-01" "172.25.37.31" "pve"
+create_vm 101 "k8s-control-01" "192.168.100.21" "pve-01"
 
 # Create worker nodes
-create_vm 201 "k8s-worker-01" "172.25.37.32" "pve"
-create_vm 202 "k8s-worker-02" "172.25.40.33" "pve2"
-create_vm 203 "k8s-worker-03" "172.25.40.34" "pve2"
+create_vm 201 "k8s-worker-01" "192.168.100.22" "pve-01"
+create_vm 202 "k8s-worker-02" "192.168.100.23" "pve-02"
+create_vm 203 "k8s-worker-03" "192.168.100.24" "pve-02"
 
 echo "Kubernetes cluster VMs created successfully"
 echo "Wait 2-3 minutes for cloud-init to complete"
