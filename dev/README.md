@@ -43,30 +43,25 @@ Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Hyper-V -All
 Restart-Computer
 ```
 
-### 1.2 Enable Nested Virtualization
+### 1.2 Configure Hyper-V Networking
 
-After reboot, configure Hyper-V for nested virtualization:
-
-```powershell
-# Set processor compatibility mode for VM migration
-Set-VMProcessor -VMName <VM-NAME> -ExposeVirtualizationExtensions $true
-
-# Enable MAC address spoofing (required for nested networking)
-Get-VMNetworkAdapter -VMName <VM-NAME> | Set-VMNetworkAdapter -MacAddressSpoofing On
-```
-
-### 1.3 Create Virtual Network Switch
+A PowerShell script is provided to automate network setup: `dev/helper-scripts/Setup-HyperVNetwork.ps1`
 
 ```powershell
-# Create an internal virtual switch for the cluster
-New-VMSwitch -Name "ProxmoxCluster" -SwitchType Internal
+# Run PowerShell as Administrator
+cd D:\GitHub\HomeLab\dev\helper-scripts
 
-# Configure NAT for internet access
-New-NetIPAddress -IPAddress 192.168.100.1 -PrefixLength 24 -InterfaceAlias "vEthernet (ProxmoxCluster)"
-New-NetNat -Name "ProxmoxClusterNAT" -InternalIPInterfaceAddressPrefix 192.168.100.0/24
+# Setup Hyper-V network with default settings
+.\Setup-HyperVNetwork.ps1
+
+# The script will:
+# - Create/verify the ProxmoxCluster switch
+# - Configure gateway IP (192.168.100.1)
+# - Setup NAT for internet access (192.168.100.0/24)
+# - Enable IP forwarding for WSL to Hyper-V communication
 ```
 
-### 1.4 Install Required Tools
+### 1.3 Install Required Tools
 
 ```powershell
 # Install Chocolatey (package manager)
@@ -94,73 +89,42 @@ terraform version
 ### 2.1 Download Proxmox VE ISO
 
 ```powershell
-# Create download directory
-New-Item -Path "C:\ProxmoxLab" -ItemType Directory -Force
+# Create directories
+New-Item -Path "E:\HyperV-VMs\ISOs" -ItemType Directory -Force
+New-Item -Path "E:\HyperV-VMs\VHDs" -ItemType Directory -Force
 
 # Download Proxmox VE ISO (use browser or PowerShell)
 $proxmoxUrl = "https://www.proxmox.com/en/downloads"
 # Navigate to download the latest Proxmox VE ISO manually
-# Save to: C:\ProxmoxLab\proxmox-ve_9.x.iso
+# Save to: E:\HyperV-VMs\ISOs\proxmox-ve_9.1-1.iso
 ```
 
-### 2.2 Create Proxmox VM Template Script
+### 2.2 Proxmox VM Creation Script
 
-Save this as `C:\ProxmoxLab\Create-ProxmoxVM.ps1`:
+A PowerShell script is provided to automate Proxmox VM creation: `dev/helper-scripts/Create-ProxmoxVM.ps1`
 
-```powershell
-param(
-    [Parameter(Mandatory=$true)]
-    [string]$VMName,
-    
-    [Parameter(Mandatory=$true)]
-    [string]$IPAddress,
-    
-    [int]$MemoryGB = 4,
-    [int]$ProcessorCount = 2,
-    [int]$DiskSizeGB = 100
-)
-
-# Create VM
-New-VM -Name $VMName -MemoryStartupBytes ($MemoryGB * 1GB) -Generation 2 -SwitchName "ProxmoxCluster"
-
-# Configure VM
-Set-VM -Name $VMName -ProcessorCount $ProcessorCount -AutomaticCheckpointsEnabled $false
-Set-VMMemory -VMName $VMName -DynamicMemoryEnabled $false
-
-# Create and attach virtual hard disk
-$vhdPath = "C:\ProxmoxLab\VHDs\$VMName.vhdx"
-New-VHD -Path $vhdPath -SizeBytes ($DiskSizeGB * 1GB) -Dynamic
-Add-VMHardDiskDrive -VMName $VMName -Path $vhdPath
-
-# Attach Proxmox ISO
-Add-VMDvdDrive -VMName $VMName -Path "C:\ProxmoxLab\proxmox-ve_8.x.iso"
-
-# Enable nested virtualization
-Set-VMProcessor -VMName $VMName -ExposeVirtualizationExtensions $true
-
-# Enable MAC spoofing
-Get-VMNetworkAdapter -VMName $VMName | Set-VMNetworkAdapter -MacAddressSpoofing On
-
-# Disable Secure Boot (Proxmox uses GRUB)
-Set-VMFirmware -VMName $VMName -EnableSecureBoot Off
-
-Write-Host "VM $VMName created successfully"
-Write-Host "Assigned IP: $IPAddress"
-Write-Host "Start the VM and complete Proxmox installation manually"
-```
+This script creates Hyper-V VMs with:
+- 100GB disk (default, configurable)
+- 8GB RAM (default, configurable)
+- 2 vCPUs (default, configurable)
+- Secure Boot disabled (required for Proxmox)
 
 ### 2.3 Create Proxmox Cluster Nodes
 
 ```powershell
-# Create three Proxmox nodes
-.\Create-ProxmoxVM.ps1 -VMName "pve-01" -IPAddress "192.168.100.11" -MemoryGB 4 -ProcessorCount 2
-.\Create-ProxmoxVM.ps1 -VMName "pve-02" -IPAddress "192.168.100.12" -MemoryGB 4 -ProcessorCount 2
-.\Create-ProxmoxVM.ps1 -VMName "pve-03" -IPAddress "192.168.100.13" -MemoryGB 4 -ProcessorCount 2
+# Navigate to the helper scripts directory
+cd D:\GitHub\HomeLab\dev\helper-scripts
+
+# Create Proxmox nodes with 100GB disks and 8GB RAM
+.\Create-ProxmoxVM.ps1 -VMName "pve-01" -IPAddress "192.168.100.11" -MemoryGB 8 -ProcessorCount 2 -DiskSizeGB 100
+.\Create-ProxmoxVM.ps1 -VMName "pve-02" -IPAddress "192.168.100.12" -MemoryGB 8 -ProcessorCount 2 -DiskSizeGB 100
+
+# Configure nested virtualization and MAC spoofing
+.\Configure-ProxmoxVMSettings.ps1 -VMNames "pve-01","pve-02"
 
 # Start VMs
 Start-VM -Name "pve-01"
 Start-VM -Name "pve-02"
-Start-VM -Name "pve-03"
 ```
 
 ### 2.4 Install Proxmox on Each Node
@@ -433,7 +397,7 @@ wsl --list --verbose
 ```powershell
 # Run PowerShell as Administrator
 # Enable forwarding on both virtual network interfaces
-Set-NetIPInterface -InterfaceAlias "vEthernet (Default Switch)" -Forwarding Enabled
+Set-NetIPInterface -InterfaceAlias "vEthernet (ProxmoxCluster)" -Forwarding Enabled
 Set-NetIPInterface -InterfaceAlias "vEthernet (WSL (Hyper-V firewall))" -Forwarding Enabled
 ```
 
