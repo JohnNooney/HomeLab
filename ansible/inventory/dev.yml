@@ -4,19 +4,19 @@ all:
     control_plane:
       hosts:
         k8s-control-01:
-          ansible_host: 192.168.100.21
+          ansible_host: 172.25.37.31
     workers:
       hosts:
         k8s-worker-01:
-          ansible_host: 192.168.100.31
+          ansible_host: 172.25.37.32
         k8s-worker-02:
-          ansible_host: 192.168.100.32
+          ansible_host: 172.25.40.33
         k8s-worker-03:
-          ansible_host: 192.168.100.33
+          ansible_host: 172.25.40.34
     k8s_cluster:
       children:
-        - control_plane
-        - workers
+        control_plane: {}
+        workers: {}
   vars:
     ansible_user: ubuntu
     ansible_become: yes
