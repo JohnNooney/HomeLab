@@ -84,9 +84,9 @@ EOF
 create_vm 101 "k8s-control-01" "192.168.100.21" "pve-01"
 
 # Create worker nodes
-create_vm 201 "k8s-worker-01" "192.168.100.22" "pve-01"
-create_vm 202 "k8s-worker-02" "192.168.100.23" "pve-02"
-create_vm 203 "k8s-worker-03" "192.168.100.24" "pve-02"
+create_vm 201 "k8s-worker-01" "192.168.100.31" "pve-01"
+create_vm 202 "k8s-worker-02" "192.168.100.32" "pve-02"
+create_vm 203 "k8s-worker-03" "192.168.100.33" "pve-02"
 
 echo "Kubernetes cluster VMs created successfully"
 echo "Wait 2-3 minutes for cloud-init to complete"
