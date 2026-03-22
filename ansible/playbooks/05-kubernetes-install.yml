@@ -50,7 +50,7 @@
       changed_when: false
 
     - name: Verify kubectl installation
-      command: kubectl version --client --short
+      command: kubectl version --client --output=yaml
       register: kubectl_version
       changed_when: false
       ignore_errors: yes
@@ -59,4 +59,4 @@
       debug:
         msg:
           - "kubeadm: {{ kubeadm_version.stdout }}"
-          - "kubectl: {{ kubectl_version.stdout | default('N/A') }}"
+          - "kubectl: {{ kubectl_version.stdout_lines[0] | default('N/A') }}"
