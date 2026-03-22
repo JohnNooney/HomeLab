@@ -1,6 +1,6 @@
 # Development Environment Setup
 
-This guide covers setting up a local Proxmox cluster on Windows for testing and development of your HomeLab Kubernetes infrastructure.
+This guide covers setting up a local Proxmox cluster on Windows for testing and development of the HomeLab Kubernetes infrastructure.
 
 ## Overview
 
@@ -252,12 +252,23 @@ ssh-keygen -t rsa -b 4096 -C "homelab-dev" -f "$env:USERPROFILE\.ssh\homelab-dev
 
 # Display public key (you'll need this for the VM creation script)
 Get-Content "$env:USERPROFILE\.ssh\homelab-dev.pub"
+
+# Run PowerShell as Administrator, then:
+Get-Service ssh-agent | Set-Service -StartupType Automatic
+Start-Service ssh-agent
+
+# Now add your key
+ssh-add $env:USERPROFILE\.ssh\homelab-dev
+
+# Verify it's loaded
+ssh-add -l
 ```
 
 **Copy the public key output** - it will look like:
 ```
 ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAACAQDExampleKey... homelab-dev
 ```
+
 
 You'll use this public key in the `create-k8s-cluster.sh` script in step 3.3.
 
@@ -274,32 +285,62 @@ wget https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.i
 ls -lh jammy-server-cloudimg-amd64.img
 ```
 
-### 3.3 Create VM Template Script
+### 3.3 Create VM Templates on All Nodes
 
-Copy the template creation script to **pve-01**. The script is available at `dev/helper-scripts/create-k8s-template.sh` in this repository.
+**IMPORTANT**: Since Proxmox uses local storage (`local-lvm`), templates are NOT shared across nodes. Each node needs its own template with a **unique ID**.
 
-**Transfer script to Proxmox**:
+#### Option A: Automated Template Creation (Recommended)
+
+Use the automated script to create templates on all nodes at once:
+
+**Transfer and run the automated script**:
 ```powershell
 # From your Windows host
-scp dev/helper-scripts/create-k8s-template.sh root@192.168.100.11:/root/
+scp dev/helper-scripts/create-templates-all-nodes.sh root@192.168.100.11:/root/
 ```
 
-**Run the script on pve-01**:
 ```bash
-# SSH to pve-01
+# SSH to any Proxmox node
 ssh root@192.168.100.11
 
 # Make executable and run
-chmod +x /root/create-k8s-template.sh
-/root/create-k8s-template.sh
+chmod +x /root/create-templates-all-nodes.sh
+/root/create-templates-all-nodes.sh
 ```
 
-**What the script does**:
-- Creates a VM with ID 9000 named "ubuntu-k8s-template"
-- Imports the Ubuntu cloud image as a disk
-- Configures cloud-init support
-- Sets up serial console and QEMU guest agent
-- Converts the VM to a reusable template
+**What the automated script does**:
+- Creates templates on all configured Proxmox nodes
+- Assigns unique template IDs per node (pve: 9000, pve2: 9001, etc.)
+- Downloads Ubuntu cloud image if not present
+- Skips nodes where templates already exist
+- Provides a summary of success/failure for each node
+
+#### Option B: Manual Template Creation Per Node
+
+If you prefer manual control, create templates individually on each node:
+
+**On pve-01 (Template ID 9000)**:
+```bash
+scp dev/helper-scripts/create-k8s-template.sh root@192.168.100.11:/root/
+ssh root@192.168.100.11
+chmod +x /root/create-k8s-template.sh
+# Edit TEMPLATE_ID=9000 in the script
+./create-k8s-template.sh
+```
+
+**On pve-02 (Template ID 9001)**:
+```bash
+scp dev/helper-scripts/create-k8s-template.sh root@192.168.100.12:/root/
+ssh root@192.168.100.12
+chmod +x /root/create-k8s-template.sh
+# Edit TEMPLATE_ID=9001 in the script
+./create-k8s-template.sh
+```
+
+**Template ID Mapping**:
+- `pve`: Template ID 9000
+- `pve2`: Template ID 9001
+- `pve3`: Template ID 9002 (if applicable)
 
 ### 3.4 Create Kubernetes VMs
 
@@ -332,11 +373,21 @@ chmod +x /root/create-k8s-cluster.sh
 ```
 
 **What the script does**:
-- Clones 4 VMs from the template (1 control plane + 3 workers)
-- Assigns static IP addresses (192.168.100.21, .31, .32, .33)
+- Clones 4 VMs from templates distributed across Proxmox nodes
+- Automatically uses the correct template ID for each target node (pve: 9000, pve2: 9001)
+- Assigns static IP addresses to each VM
 - Configures cloud-init with your SSH key for passwordless access
 - Resizes disks to provide additional storage
 - Starts all VMs automatically
+
+**VM Distribution**:
+The script distributes VMs across your Proxmox cluster. Update the node assignments in the script as needed:
+```bash
+create_vm 101 "k8s-control-01" "192.168.100.21" "pve"   # Control plane on pve
+create_vm 201 "k8s-worker-01" "192.168.100.31" "pve"   # Worker 1 on pve
+create_vm 202 "k8s-worker-02" "192.168.100.32" "pve2"  # Worker 2 on pve2
+create_vm 203 "k8s-worker-03" "192.168.100.33" "pve2"  # Worker 3 on pve2
+```
 
 **Wait 2-3 minutes** for cloud-init to complete before attempting SSH access.
 
@@ -352,48 +403,317 @@ ssh ubuntu@192.168.100.32  # Worker 2
 ssh ubuntu@192.168.100.33  # Worker 3
 ```
 
-## Phase 4: Kubernetes Cluster Setup
+## Phase 3.6: Setup Ansible on Windows using WSL
 
-### 4.1 Prepare Ansible Inventory
+Before running Ansible playbooks, you need to set up Ansible on your Windows machine using Windows Subsystem for Linux (WSL).
 
-On your Windows host, create `inventory/dev.ini`:
+### 3.6.1 Install WSL
 
-```ini
-[control_plane]
-k8s-control-01 ansible_host=192.168.100.21 ansible_user=ubuntu
+**Enable WSL on Windows**:
+```powershell
+# Run PowerShell as Administrator
+wsl --install
 
-[workers]
-k8s-worker-01 ansible_host=192.168.100.31 ansible_user=ubuntu
-k8s-worker-02 ansible_host=192.168.100.32 ansible_user=ubuntu
-k8s-worker-03 ansible_host=192.168.100.33 ansible_user=ubuntu
+# Or if WSL is already installed, install Ubuntu
+wsl --install -d Ubuntu
 
-[k8s_cluster:children]
-control_plane
-workers
-
-[k8s_cluster:vars]
-ansible_python_interpreter=/usr/bin/python3
-ansible_ssh_common_args='-o StrictHostKeyChecking=no'
+# Reboot when prompted
+Restart-Computer
 ```
 
-### 4.2 Run Ansible Playbooks
+**Verify WSL installation**:
+```powershell
+# Check WSL version
+wsl --list --verbose
 
-Refer to the Ansible playbooks in the `ansible/` directory. Run from Windows using WSL or a Linux VM:
+# Should show Ubuntu running WSL 2
+```
+
+**Enable IP forwarding for WSL to Hyper-V communication**:
+```powershell
+# Run PowerShell as Administrator
+# Enable forwarding on both virtual network interfaces
+Set-NetIPInterface -InterfaceAlias "vEthernet (Default Switch)" -Forwarding Enabled
+Set-NetIPInterface -InterfaceAlias "vEthernet (WSL (Hyper-V firewall))" -Forwarding Enabled
+```
+
+> **Note**: This step is required to allow WSL2 to communicate with VMs running on Hyper-V's Default Switch network. Without IP forwarding enabled, SSH and Ansible connections from WSL to your Kubernetes VMs will fail.
+
+### 3.6.2 Configure WSL Ubuntu
+
+**Launch WSL Ubuntu**:
+```powershell
+# Start WSL
+wsl
+```
+
+**Initial setup** (first time only):
+```bash
+# You'll be prompted to create a username and password
+# Example: username=homelab, password=<your-secure-password>
+
+# Update package lists
+sudo apt update && sudo apt upgrade -y
+```
+
+### 3.6.3 Install Ansible in WSL
 
 ```bash
-# Install Ansible (if using WSL)
-sudo apt update
+# Install software-properties-common for add-apt-repository
+sudo apt install software-properties-common -y
+
+# Add Ansible PPA repository
+sudo add-apt-repository --yes --update ppa:ansible/ansible
+
+# Install Ansible
 sudo apt install ansible -y
 
+# Verify Ansible installation
+ansible --version
+
+# Install additional Python dependencies
+sudo apt install python3-pip -y
+sudo apt install python3-jmespath
+```
+
+### 3.6.4 Configure SSH Access from WSL
+
+**Copy SSH keys from Windows to WSL**:
+```bash
+# Create .ssh directory in WSL
+mkdir -p ~/.ssh
+chmod 700 ~/.ssh
+
+# Copy SSH key from Windows to WSL
+# Replace <WINDOWS_USERNAME> with your Windows username
+cp /mnt/c/Users/<WINDOWS_USERNAME>/.ssh/homelab-dev ~/.ssh/
+cp /mnt/c/Users/<WINDOWS_USERNAME>/.ssh/homelab-dev.pub ~/.ssh/
+
+# Set correct permissions
+chmod 600 ~/.ssh/homelab-dev
+chmod 644 ~/.ssh/homelab-dev.pub
+
+# Add key to SSH agent
+eval "$(ssh-agent -s)"
+ssh-add ~/.ssh/homelab-dev
+
+# Verify key is loaded
+ssh-add -l
+```
+
+**Test SSH connectivity to Kubernetes VMs**:
+```bash
+# Test connection to control plane
+ssh -i ~/.ssh/homelab-dev ubuntu@192.168.100.21
+
+# Test connection to workers
+ssh -i ~/.ssh/homelab-dev ubuntu@192.168.100.31
+ssh -i ~/.ssh/homelab-dev ubuntu@192.168.100.32
+ssh -i ~/.ssh/homelab-dev ubuntu@192.168.100.33
+
+# Exit each SSH session after testing
+exit
+```
+
+### 3.6.5 Access HomeLab Repository in WSL
+
+**Navigate to your repository**:
+```bash
+# Windows drives are mounted at /mnt/<drive-letter>
+cd /mnt/d/GitHub/HomeLab
+
+# Verify you're in the correct directory
+pwd
+ls -la
+
+# Navigate to ansible directory
+cd ansible
+```
+
+**Alternative: Clone repository in WSL** (optional):
+```bash
+# If you prefer to work entirely in WSL
+cd ~
+git clone https://github.com/<your-username>/HomeLab.git
+cd HomeLab/ansible
+```
+
+### 3.6.6 Configure Ansible Settings
+
+**Create ansible.cfg** (optional but recommended):
+```bash
+# Create ansible.cfg in the ansible directory
+cat > ansible.cfg << 'EOF'
+[defaults]
+inventory = inventory/dev.yml
+host_key_checking = False
+private_key_file = ~/.ssh/homelab-dev
+remote_user = ubuntu
+retry_files_enabled = False
+stdout_callback = yaml
+
+[privilege_escalation]
+become = True
+become_method = sudo
+become_user = root
+become_ask_pass = False
+
+[ssh_connection]
+ssh_args = -o ControlMaster=auto -o ControlPersist=60s -o StrictHostKeyChecking=no
+pipelining = True
+EOF
+```
+
+### 3.6.7 Verify Ansible Setup
+
+**Test Ansible connectivity**:
+```bash
 # Navigate to ansible directory
 cd /mnt/d/GitHub/HomeLab/ansible
 
-# Run Kubernetes installation playbook
-ansible-playbook -i inventory/dev.ini playbooks/k8s-install.yml
+# Test ping to all hosts
+ansible all -i inventory/dev.yml -m ping
 
-# Verify cluster
+# Expected output: SUCCESS for all hosts
+# k8s-control-01 | SUCCESS => { "changed": false, "ping": "pong" }
+# k8s-worker-01 | SUCCESS => { "changed": false, "ping": "pong" }
+# k8s-worker-02 | SUCCESS => { "changed": false, "ping": "pong" }
+# k8s-worker-03 | SUCCESS => { "changed": false, "ping": "pong" }
+```
+
+**Test ad-hoc commands**:
+```bash
+# Check uptime on all nodes
+ansible all -i inventory/dev.yml -m command -a "uptime"
+
+# Check disk space
+ansible all -i inventory/dev.yml -m command -a "df -h"
+
+# Verify Ubuntu version
+ansible all -i inventory/dev.yml -m command -a "lsb_release -a"
+```
+
+### 3.6.8 WSL Tips and Best Practices
+
+**Accessing WSL from Windows**:
+- WSL filesystem: `\\wsl$\Ubuntu-22.04\home\<username>`
+- Windows filesystem from WSL: `/mnt/c/`, `/mnt/d/`, etc.
+
+**Performance considerations**:
+- Work on files in WSL filesystem (`~/`) for better performance
+- Or work directly from Windows filesystem (`/mnt/d/`) for easier access from Windows tools
+
+**Useful WSL commands**:
+```powershell
+# From PowerShell/CMD:
+# Start WSL
+wsl
+
+# Run a command in WSL without entering shell
+wsl ls -la
+
+# Shutdown WSL
+wsl --shutdown
+
+# List WSL distributions
+wsl --list --verbose
+
+# Set default WSL distribution
+wsl --set-default Ubuntu-22.04
+```
+
+**WSL resource management**:
+Create `.wslconfig` in `C:\Users\<USERNAME>\`:
+```ini
+[wsl2]
+memory=8GB
+processors=4
+swap=2GB
+```
+
+## Phase 4: Kubernetes Cluster Setup
+
+### 4.1 Verify Ansible Inventory
+
+The Ansible inventory file has already been created at `ansible/inventory/dev.yml`:
+
+```yaml
+all:
+  children:
+    control_plane:
+      hosts:
+        k8s-control-01:
+          ansible_host: 192.168.100.21
+    workers:
+      hosts:
+        k8s-worker-01:
+          ansible_host: 192.168.100.31
+        k8s-worker-02:
+          ansible_host: 192.168.100.32
+        k8s-worker-03:
+          ansible_host: 192.168.100.33
+    k8s_cluster:
+      children:
+        - control_plane
+        - workers
+  vars:
+    ansible_user: ubuntu
+    ansible_become: yes
+    ansible_python_interpreter: /usr/bin/python3
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+```
+
+**Note**: If your VM IP addresses differ, update the `ansible_host` values in `ansible/inventory/dev.yml` accordingly.
+
+### 4.2 Run Ansible Playbooks
+
+Run the Ansible playbooks from WSL to install and configure Kubernetes:
+
+```bash
+# Navigate to ansible directory in WSL
+cd /mnt/d/GitHub/HomeLab/ansible
+
+# Option 1: Run the complete installation using site.yml (recommended)
+ansible-playbook -i inventory/dev.yml playbooks/site.yml
+
+# Option 2: Run the all-in-one k8s-install.yml playbook
+ansible-playbook -i inventory/dev.yml playbooks/k8s-install.yml
+
+# Option 3: Run individual playbooks step-by-step
+ansible-playbook -i inventory/dev.yml playbooks/01-system-update.yml
+ansible-playbook -i inventory/dev.yml playbooks/02-networking.yml
+ansible-playbook -i inventory/dev.yml playbooks/03-disable-swap.yml
+ansible-playbook -i inventory/dev.yml playbooks/04-containerd.yml
+ansible-playbook -i inventory/dev.yml playbooks/05-kubernetes-install.yml
+ansible-playbook -i inventory/dev.yml playbooks/06-control-plane-init.yml
+ansible-playbook -i inventory/dev.yml playbooks/07-workers-join.yml
+```
+
+**Playbook descriptions**:
+- **site.yml**: Runs all playbooks in sequence (complete end-to-end installation)
+- **k8s-install.yml**: All-in-one playbook combining all installation steps
+- **01-system-update.yml**: System updates, hardening, and firewall configuration
+- **02-networking.yml**: Kernel modules and networking configuration for Kubernetes
+- **03-disable-swap.yml**: Disable swap (required by Kubernetes)
+- **04-containerd.yml**: Install and configure containerd runtime
+- **05-kubernetes-install.yml**: Install kubeadm, kubelet, and kubectl
+- **06-control-plane-init.yml**: Initialize Kubernetes control plane
+- **07-workers-join.yml**: Join worker nodes to the cluster
+
+### 4.3 Verify Cluster Installation
+
+```bash
+# SSH to control plane from WSL
 ssh ubuntu@192.168.100.21
+
+# Check cluster nodes
 kubectl get nodes
+
+# Check system pods
+kubectl get pods -n kube-system
+
+# Exit SSH session
+exit
 ```
 
 ## Phase 5: Kubernetes Cluster Bootstrapping
