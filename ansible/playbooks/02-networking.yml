@@ -47,9 +47,10 @@
       command: sysctl --system
 
     - name: Verify kernel modules are loaded
-      command: lsmod | grep -E 'overlay|br_netfilter'
+      shell: lsmod | grep -E 'overlay|br_netfilter'
       register: modules_check
       changed_when: false
+      failed_when: modules_check.rc not in [0, 1]
 
     - name: Display loaded modules
       debug:
