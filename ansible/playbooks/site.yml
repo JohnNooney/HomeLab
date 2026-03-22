@@ -1,0 +1,46 @@
+---
+- name: Complete Kubernetes Cluster Provisioning
+  hosts: all
+  gather_facts: yes
+  tasks:
+    - name: Display deployment start message
+      debug:
+        msg: "Starting Kubernetes cluster deployment on {{ inventory_hostname }}"
+
+- import_playbook: 01-system-update.yml
+- import_playbook: 02-networking.yml
+- import_playbook: 03-disable-swap.yml
+- import_playbook: 04-containerd.yml
+- import_playbook: 05-kubernetes-install.yml
+- import_playbook: 06-control-plane-init.yml
+- import_playbook: 07-workers-join.yml
+
+- name: Deployment Complete
+  hosts: control_plane
+  become: yes
+  become_user: ubuntu
+  environment:
+    KUBECONFIG: /home/ubuntu/.kube/config
+  tasks:
+    - name: Final cluster verification
+      command: kubectl get nodes -o wide
+      register: final_cluster_state
+      changed_when: false
+
+    - name: Display final cluster state
+      debug:
+        msg:
+          - "=========================================="
+          - "Kubernetes Cluster Deployment Complete!"
+          - "=========================================="
+          - "{{ final_cluster_state.stdout_lines }}"
+          - ""
+          - "Next Steps:"
+          - "1. Deploy CNI (Calico/Cilium) - See kubernetes/README.md"
+          - "2. Deploy Ingress Controller"
+          - "3. Deploy Storage Provisioner"
+          - "4. Deploy cluster services"
+          - ""
+          - "Access cluster:"
+          - "  ssh ubuntu@{{ ansible_host }}"
+          - "  kubectl get nodes"

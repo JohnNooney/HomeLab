@@ -1,0 +1,274 @@
+---
+# Complete Kubernetes Installation Playbook
+# This playbook combines all steps for installing Kubernetes on Ubuntu VMs
+# Usage: ansible-playbook -i inventory/hosts.yml playbooks/k8s-install.yml
+
+- name: System Updates and Hardening
+  hosts: k8s_cluster
+  become: yes
+  tasks:
+    - name: Update apt package cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Upgrade all packages
+      apt:
+        upgrade: dist
+        autoremove: yes
+        autoclean: yes
+
+    - name: Install required system packages
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+          - software-properties-common
+          - ufw
+          - vim
+          - wget
+          - git
+        state: present
+
+- name: Configure Networking for Kubernetes
+  hosts: k8s_cluster
+  become: yes
+  tasks:
+    - name: Load kernel modules for Kubernetes
+      modprobe:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - overlay
+        - br_netfilter
+
+    - name: Persist kernel modules
+      copy:
+        dest: /etc/modules-load.d/k8s.conf
+        content: |
+          overlay
+          br_netfilter
+
+    - name: Configure sysctl parameters for Kubernetes
+      sysctl:
+        name: "{{ item.name }}"
+        value: "{{ item.value }}"
+        state: present
+        sysctl_file: /etc/sysctl.d/k8s.conf
+        reload: yes
+      loop:
+        - { name: 'net.bridge.bridge-nf-call-iptables', value: '1' }
+        - { name: 'net.bridge.bridge-nf-call-ip6tables', value: '1' }
+        - { name: 'net.ipv4.ip_forward', value: '1' }
+
+- name: Disable Swap for Kubernetes
+  hosts: k8s_cluster
+  become: yes
+  tasks:
+    - name: Disable swap immediately
+      command: swapoff -a
+      when: ansible_swaptotal_mb > 0
+
+    - name: Remove swap entries from /etc/fstab
+      lineinfile:
+        path: /etc/fstab
+        regexp: '^\s*[^#].*\s+swap\s+'
+        state: absent
+
+- name: Install and Configure containerd
+  hosts: k8s_cluster
+  become: yes
+  tasks:
+    - name: Install containerd and dependencies
+      apt:
+        name:
+          - containerd
+          - runc
+        state: present
+        update_cache: yes
+
+    - name: Create containerd configuration directory
+      file:
+        path: /etc/containerd
+        state: directory
+        mode: '0755'
+
+    - name: Generate default containerd configuration
+      shell: containerd config default > /etc/containerd/config.toml
+      args:
+        creates: /etc/containerd/config.toml
+
+    - name: Configure containerd to use systemd cgroup driver
+      lineinfile:
+        path: /etc/containerd/config.toml
+        regexp: '^\s*SystemdCgroup\s*='
+        line: '            SystemdCgroup = true'
+        insertafter: '^\s*\[plugins\."io\.containerd\.grpc\.v1\.cri"\.containerd\.runtimes\.runc\.options\]'
+        state: present
+
+    - name: Restart containerd service
+      systemd:
+        name: containerd
+        state: restarted
+        enabled: yes
+        daemon_reload: yes
+
+- name: Install Kubernetes Components
+  hosts: k8s_cluster
+  become: yes
+  vars:
+    kubernetes_version: "1.28"
+  tasks:
+    - name: Add Kubernetes apt signing key
+      apt_key:
+        url: https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/Release.key
+        keyring: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+        state: present
+
+    - name: Add Kubernetes apt repository
+      apt_repository:
+        repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/ /"
+        state: present
+        filename: kubernetes
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install Kubernetes packages
+      apt:
+        name:
+          - kubelet
+          - kubeadm
+          - kubectl
+        state: present
+
+    - name: Hold Kubernetes packages at current version
+      dpkg_selections:
+        name: "{{ item }}"
+        selection: hold
+      loop:
+        - kubelet
+        - kubeadm
+        - kubectl
+
+    - name: Enable kubelet service
+      systemd:
+        name: kubelet
+        enabled: yes
+
+- name: Initialize Kubernetes Control Plane
+  hosts: control_plane
+  become: yes
+  vars:
+    pod_network_cidr: "10.244.0.0/16"
+    kubernetes_api_server_advertise_address: "{{ ansible_host }}"
+  tasks:
+    - name: Check if Kubernetes is already initialized
+      stat:
+        path: /etc/kubernetes/admin.conf
+      register: kubeadm_init
+
+    - name: Initialize Kubernetes control plane
+      command: >
+        kubeadm init
+        --pod-network-cidr={{ pod_network_cidr }}
+        --apiserver-advertise-address={{ kubernetes_api_server_advertise_address }}
+      when: not kubeadm_init.stat.exists
+      register: kubeadm_init_output
+
+    - name: Create .kube directory for ubuntu user
+      file:
+        path: /home/ubuntu/.kube
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+
+    - name: Copy admin.conf to ubuntu's kubeconfig
+      copy:
+        src: /etc/kubernetes/admin.conf
+        dest: /home/ubuntu/.kube/config
+        remote_src: yes
+        owner: ubuntu
+        group: ubuntu
+        mode: '0600'
+
+    - name: Generate join command for worker nodes
+      command: kubeadm token create --print-join-command
+      register: join_command
+      changed_when: false
+
+    - name: Save join command to local file
+      copy:
+        content: "{{ join_command.stdout }}"
+        dest: /tmp/kubernetes-join-command
+        mode: '0644'
+
+    - name: Fetch join command to control machine
+      fetch:
+        src: /tmp/kubernetes-join-command
+        dest: /tmp/kubernetes-join-command
+        flat: yes
+
+- name: Join Worker Nodes to Kubernetes Cluster
+  hosts: workers
+  become: yes
+  tasks:
+    - name: Check if node is already part of cluster
+      stat:
+        path: /etc/kubernetes/kubelet.conf
+      register: kubelet_conf
+
+    - name: Copy join command from control machine
+      copy:
+        src: /tmp/kubernetes-join-command
+        dest: /tmp/kubernetes-join-command
+        mode: '0755'
+      when: not kubelet_conf.stat.exists
+
+    - name: Join worker node to cluster
+      shell: bash /tmp/kubernetes-join-command
+      when: not kubelet_conf.stat.exists
+
+- name: Verify Cluster
+  hosts: control_plane
+  become: yes
+  become_user: ubuntu
+  environment:
+    KUBECONFIG: /home/ubuntu/.kube/config
+  tasks:
+    - name: Wait for all nodes to be registered
+      command: kubectl get nodes --no-headers
+      register: nodes_list
+      until: nodes_list.stdout_lines | length == groups['k8s_cluster'] | length
+      retries: 20
+      delay: 10
+      changed_when: false
+
+    - name: Label worker nodes
+      command: kubectl label node {{ item }} node-role.kubernetes.io/worker=worker
+      loop: "{{ groups['workers'] }}"
+      ignore_errors: yes
+      changed_when: false
+
+    - name: Get final cluster status
+      command: kubectl get nodes -o wide
+      register: final_nodes
+      changed_when: false
+
+    - name: Display final cluster status
+      debug:
+        msg:
+          - "=========================================="
+          - "Kubernetes Cluster Installation Complete!"
+          - "=========================================="
+          - "{{ final_nodes.stdout_lines }}"
+          - ""
+          - "Next Steps:"
+          - "1. Deploy CNI (Calico/Cilium)"
+          - "2. Deploy Ingress Controller"
+          - "3. Deploy Storage Provisioner"

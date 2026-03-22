@@ -34,6 +34,19 @@ all:
     ansible_become: yes
 ```
 
+### Quick Start
+
+```bash
+# Navigate to ansible directory
+cd ansible
+
+# Run complete installation (recommended)
+ansible-playbook -i inventory/hosts.yml playbooks/site.yml
+
+# Or run the all-in-one playbook
+ansible-playbook -i inventory/hosts.yml playbooks/k8s-install.yml
+```
+
 ### Deployment Steps
 
 #### 2.1 System Updates and Hardening
@@ -83,7 +96,7 @@ ansible-playbook -i inventory/hosts.yml playbooks/02-networking.yml
 **Purpose**: Disable swap as required by Kubernetes.
 
 ```bash
-ansible-playbook -i inventory/hosts.yml playbooks/04-disable-swap.yml
+ansible-playbook -i inventory/hosts.yml playbooks/03-disable-swap.yml
 ```
 
 **Tasks Performed**:
@@ -96,7 +109,7 @@ ansible-playbook -i inventory/hosts.yml playbooks/04-disable-swap.yml
 **Purpose**: Install and configure containerd as the container runtime.
 
 ```bash
-ansible-playbook -i inventory/hosts.yml playbooks/05-containerd.yml
+ansible-playbook -i inventory/hosts.yml playbooks/04-containerd.yml
 ```
 
 **Tasks Performed**:
@@ -118,7 +131,7 @@ ansible-playbook -i inventory/hosts.yml playbooks/05-containerd.yml
 **Purpose**: Install kubeadm, kubelet, and kubectl.
 
 ```bash
-ansible-playbook -i inventory/hosts.yml playbooks/06-kubernetes-install.yml
+ansible-playbook -i inventory/hosts.yml playbooks/05-kubernetes-install.yml
 ```
 
 **Tasks Performed**:
@@ -133,7 +146,7 @@ ansible-playbook -i inventory/hosts.yml playbooks/06-kubernetes-install.yml
 **Purpose**: Bootstrap the Kubernetes control plane on master node(s).
 
 ```bash
-ansible-playbook -i inventory/hosts.yml playbooks/07-control-plane-init.yml
+ansible-playbook -i inventory/hosts.yml playbooks/06-control-plane-init.yml
 ```
 
 **Tasks Performed**:
@@ -153,7 +166,7 @@ ansible-playbook -i inventory/hosts.yml playbooks/07-control-plane-init.yml
 **Purpose**: Join worker nodes to the Kubernetes cluster.
 
 ```bash
-ansible-playbook -i inventory/hosts.yml playbooks/08-workers-join.yml
+ansible-playbook -i inventory/hosts.yml playbooks/07-workers-join.yml
 ```
 
 **Tasks Performed**:

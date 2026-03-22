@@ -1,0 +1,75 @@
+---
+- name: Join Worker Nodes to Kubernetes Cluster
+  hosts: workers
+  become: yes
+  tasks:
+    - name: Check if node is already part of cluster
+      stat:
+        path: /etc/kubernetes/kubelet.conf
+      register: kubelet_conf
+
+    - name: Copy join command from control machine
+      copy:
+        src: /tmp/kubernetes-join-command
+        dest: /tmp/kubernetes-join-command
+        mode: '0755'
+      when: not kubelet_conf.stat.exists
+
+    - name: Join worker node to cluster
+      shell: bash /tmp/kubernetes-join-command
+      when: not kubelet_conf.stat.exists
+      register: join_output
+
+    - name: Display join output
+      debug:
+        var: join_output.stdout_lines
+      when: join_output is defined and join_output.changed
+
+    - name: Wait for kubelet to be ready
+      systemd:
+        name: kubelet
+        state: started
+      register: kubelet_status
+
+    - name: Display kubelet status
+      debug:
+        msg: "kubelet is {{ kubelet_status.status.ActiveState }}"
+
+- name: Label and verify worker nodes
+  hosts: control_plane
+  become: yes
+  become_user: ubuntu
+  environment:
+    KUBECONFIG: /home/ubuntu/.kube/config
+  tasks:
+    - name: Wait for all nodes to be registered
+      command: kubectl get nodes --no-headers
+      register: nodes_list
+      until: nodes_list.stdout_lines | length == groups['k8s_cluster'] | length
+      retries: 20
+      delay: 10
+      changed_when: false
+
+    - name: Label worker nodes
+      command: kubectl label node {{ item }} node-role.kubernetes.io/worker=worker
+      loop: "{{ groups['workers'] }}"
+      ignore_errors: yes
+      changed_when: false
+
+    - name: Get final cluster status
+      command: kubectl get nodes -o wide
+      register: final_nodes
+      changed_when: false
+
+    - name: Display final cluster status
+      debug:
+        var: final_nodes.stdout_lines
+
+    - name: Get all pods in kube-system
+      command: kubectl get pods -n kube-system
+      register: system_pods
+      changed_when: false
+
+    - name: Display kube-system pods
+      debug:
+        var: system_pods.stdout_lines

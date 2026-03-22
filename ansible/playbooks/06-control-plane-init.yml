@@ -1,0 +1,109 @@
+---
+- name: Initialize Kubernetes Control Plane
+  hosts: control_plane
+  become: yes
+  vars:
+    pod_network_cidr: "10.244.0.0/16"
+    kubernetes_api_server_advertise_address: "{{ ansible_host }}"
+  tasks:
+    - name: Check if Kubernetes is already initialized
+      stat:
+        path: /etc/kubernetes/admin.conf
+      register: kubeadm_init
+
+    - name: Initialize Kubernetes control plane
+      command: >
+        kubeadm init
+        --pod-network-cidr={{ pod_network_cidr }}
+        --apiserver-advertise-address={{ kubernetes_api_server_advertise_address }}
+      when: not kubeadm_init.stat.exists
+      register: kubeadm_init_output
+
+    - name: Display kubeadm init output
+      debug:
+        var: kubeadm_init_output.stdout_lines
+      when: kubeadm_init_output is defined and kubeadm_init_output.changed
+
+    - name: Create .kube directory for root user
+      file:
+        path: /root/.kube
+        state: directory
+        mode: '0755'
+
+    - name: Copy admin.conf to root's kubeconfig
+      copy:
+        src: /etc/kubernetes/admin.conf
+        dest: /root/.kube/config
+        remote_src: yes
+        owner: root
+        group: root
+        mode: '0600'
+
+    - name: Create .kube directory for ubuntu user
+      file:
+        path: /home/ubuntu/.kube
+        state: directory
+        owner: ubuntu
+        group: ubuntu
+        mode: '0755'
+
+    - name: Copy admin.conf to ubuntu's kubeconfig
+      copy:
+        src: /etc/kubernetes/admin.conf
+        dest: /home/ubuntu/.kube/config
+        remote_src: yes
+        owner: ubuntu
+        group: ubuntu
+        mode: '0600'
+
+    - name: Generate join command for worker nodes
+      command: kubeadm token create --print-join-command
+      register: join_command
+      changed_when: false
+
+    - name: Save join command to local file
+      copy:
+        content: "{{ join_command.stdout }}"
+        dest: /tmp/kubernetes-join-command
+        mode: '0644'
+
+    - name: Fetch join command to control machine
+      fetch:
+        src: /tmp/kubernetes-join-command
+        dest: /tmp/kubernetes-join-command
+        flat: yes
+
+    - name: Install kubectl bash completion
+      lineinfile:
+        path: /home/ubuntu/.bashrc
+        line: 'source <(kubectl completion bash)'
+        state: present
+
+    - name: Add kubectl alias
+      lineinfile:
+        path: /home/ubuntu/.bashrc
+        line: 'alias k=kubectl'
+        state: present
+
+    - name: Wait for control plane to be ready
+      command: kubectl get nodes
+      register: nodes_status
+      until: nodes_status.rc == 0
+      retries: 10
+      delay: 10
+      changed_when: false
+      become_user: ubuntu
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Display cluster status
+      command: kubectl get nodes
+      register: cluster_nodes
+      changed_when: false
+      become_user: ubuntu
+      environment:
+        KUBECONFIG: /home/ubuntu/.kube/config
+
+    - name: Show cluster nodes
+      debug:
+        var: cluster_nodes.stdout_lines

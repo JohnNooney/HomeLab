@@ -1,0 +1,178 @@
+---
+- name: System Updates and Hardening
+  hosts: k8s_cluster
+  become: yes
+  tasks:
+    - name: Update apt package cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Upgrade all packages
+      apt:
+        upgrade: dist
+        autoremove: yes
+        autoclean: yes
+
+    - name: Install required system packages
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+          - software-properties-common
+          - ufw
+          - fail2ban
+          - ntp
+          - vim
+          - wget
+          - git
+        state: present
+
+    - name: Configure automatic security updates
+      apt:
+        name: unattended-upgrades
+        state: present
+
+    - name: Configure unattended-upgrades
+      copy:
+        dest: /etc/apt/apt.conf.d/50unattended-upgrades
+        content: |
+          Unattended-Upgrade::Allowed-Origins {
+              "${distro_id}:${distro_codename}-security";
+          };
+          Unattended-Upgrade::AutoFixInterruptedDpkg "true";
+          Unattended-Upgrade::MinimalSteps "true";
+          Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+          Unattended-Upgrade::Remove-Unused-Dependencies "true";
+          Unattended-Upgrade::Automatic-Reboot "false";
+
+    - name: Set timezone to UTC
+      timezone:
+        name: UTC
+
+    - name: Ensure NTP is running
+      systemd:
+        name: ntp
+        state: started
+        enabled: yes
+
+    - name: Set hostname
+      hostname:
+        name: "{{ inventory_hostname }}"
+
+    - name: Update /etc/hosts with cluster nodes
+      blockinfile:
+        path: /etc/hosts
+        block: |
+          {% for host in groups['k8s_cluster'] %}
+          {{ hostvars[host]['ansible_host'] }} {{ host }}
+          {% endfor %}
+        marker: "# {mark} ANSIBLE MANAGED BLOCK - K8S CLUSTER"
+
+    - name: Configure SSH hardening
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+        state: present
+      loop:
+        - { regexp: '^#?PermitRootLogin', line: 'PermitRootLogin no' }
+        - { regexp: '^#?PasswordAuthentication', line: 'PasswordAuthentication no' }
+        - { regexp: '^#?PubkeyAuthentication', line: 'PubkeyAuthentication yes' }
+        - { regexp: '^#?X11Forwarding', line: 'X11Forwarding no' }
+      notify: Restart SSH
+
+    - name: Configure fail2ban for SSH
+      copy:
+        dest: /etc/fail2ban/jail.local
+        content: |
+          [sshd]
+          enabled = true
+          port = ssh
+          filter = sshd
+          logpath = /var/log/auth.log
+          maxretry = 3
+          bantime = 3600
+
+    - name: Start and enable fail2ban
+      systemd:
+        name: fail2ban
+        state: started
+        enabled: yes
+
+    - name: Configure UFW default policies
+      ufw:
+        direction: "{{ item.direction }}"
+        policy: "{{ item.policy }}"
+      loop:
+        - { direction: 'incoming', policy: 'deny' }
+        - { direction: 'outgoing', policy: 'allow' }
+
+    - name: Allow SSH through UFW
+      ufw:
+        rule: allow
+        port: '22'
+        proto: tcp
+
+    - name: Allow Kubernetes API server (control plane only)
+      ufw:
+        rule: allow
+        port: '6443'
+        proto: tcp
+      when: "'control_plane' in group_names"
+
+    - name: Allow etcd (control plane only)
+      ufw:
+        rule: allow
+        port: '2379:2380'
+        proto: tcp
+      when: "'control_plane' in group_names"
+
+    - name: Allow Kubelet API
+      ufw:
+        rule: allow
+        port: '10250'
+        proto: tcp
+
+    - name: Allow kube-scheduler (control plane only)
+      ufw:
+        rule: allow
+        port: '10259'
+        proto: tcp
+      when: "'control_plane' in group_names"
+
+    - name: Allow kube-controller-manager (control plane only)
+      ufw:
+        rule: allow
+        port: '10257'
+        proto: tcp
+      when: "'control_plane' in group_names"
+
+    - name: Allow NodePort services
+      ufw:
+        rule: allow
+        port: '30000:32767'
+        proto: tcp
+
+    - name: Enable UFW
+      ufw:
+        state: enabled
+
+    - name: Disable unnecessary services
+      systemd:
+        name: "{{ item }}"
+        state: stopped
+        enabled: no
+      loop:
+        - snapd
+        - iscsid
+      ignore_errors: yes
+
+  handlers:
+    - name: Restart SSH
+      systemd:
+        name: sshd
+        state: restarted

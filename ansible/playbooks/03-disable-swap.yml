@@ -1,0 +1,25 @@
+---
+- name: Disable Swap for Kubernetes
+  hosts: k8s_cluster
+  become: yes
+  tasks:
+    - name: Disable swap immediately
+      command: swapoff -a
+      when: ansible_swaptotal_mb > 0
+
+    - name: Remove swap entries from /etc/fstab
+      lineinfile:
+        path: /etc/fstab
+        regexp: '^\s*[^#].*\s+swap\s+'
+        state: absent
+
+    - name: Verify swap is disabled
+      command: swapon --show
+      register: swap_status
+      changed_when: false
+      failed_when: swap_status.stdout != ""
+
+    - name: Display swap status
+      debug:
+        msg: "Swap is disabled"
+      when: swap_status.stdout == ""

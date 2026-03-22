@@ -1,0 +1,83 @@
+---
+- name: Install and Configure containerd
+  hosts: k8s_cluster
+  become: yes
+  tasks:
+    - name: Install containerd and dependencies
+      apt:
+        name:
+          - containerd
+          - runc
+        state: present
+        update_cache: yes
+
+    - name: Create containerd configuration directory
+      file:
+        path: /etc/containerd
+        state: directory
+        mode: '0755'
+
+    - name: Generate default containerd configuration
+      shell: containerd config default > /etc/containerd/config.toml
+      args:
+        creates: /etc/containerd/config.toml
+
+    - name: Configure containerd to use systemd cgroup driver
+      lineinfile:
+        path: /etc/containerd/config.toml
+        regexp: '^\s*SystemdCgroup\s*='
+        line: '            SystemdCgroup = true'
+        insertafter: '^\s*\[plugins\."io\.containerd\.grpc\.v1\.cri"\.containerd\.runtimes\.runc\.options\]'
+        state: present
+
+    - name: Restart containerd service
+      systemd:
+        name: containerd
+        state: restarted
+        enabled: yes
+        daemon_reload: yes
+
+    - name: Wait for containerd to be ready
+      wait_for:
+        timeout: 10
+
+    - name: Verify containerd is running
+      systemd:
+        name: containerd
+        state: started
+      register: containerd_status
+
+    - name: Display containerd status
+      debug:
+        msg: "containerd is {{ containerd_status.status.ActiveState }}"
+
+    - name: Install crictl (CRI CLI tool)
+      block:
+        - name: Download crictl
+          get_url:
+            url: "https://github.com/kubernetes-sigs/cri-tools/releases/download/v1.28.0/crictl-v1.28.0-linux-amd64.tar.gz"
+            dest: /tmp/crictl.tar.gz
+            mode: '0644'
+
+        - name: Extract crictl
+          unarchive:
+            src: /tmp/crictl.tar.gz
+            dest: /usr/local/bin
+            remote_src: yes
+
+        - name: Configure crictl to use containerd
+          copy:
+            dest: /etc/crictl.yaml
+            content: |
+              runtime-endpoint: unix:///run/containerd/containerd.sock
+              image-endpoint: unix:///run/containerd/containerd.sock
+              timeout: 10
+
+        - name: Verify crictl installation
+          command: crictl --version
+          register: crictl_version
+          changed_when: false
+
+        - name: Display crictl version
+          debug:
+            var: crictl_version.stdout
