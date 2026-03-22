@@ -635,7 +635,7 @@ swap=2GB
 
 ### 4.1 Verify Ansible Inventory
 
-The Ansible inventory file has already been created at `ansible/inventory/dev.yml`:
+Verify the Ansible inventory has the expected configurations at `ansible/inventory/dev.yml`:
 
 ```yaml
 all:
