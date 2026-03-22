@@ -163,32 +163,89 @@ On **pve-01** (via web UI or SSH):
 # SSH to pve-01
 ssh root@192.168.100.11
 
-# Create cluster
-pvecm create homelab-dev
+# Verify hostname resolution (critical for clustering)
+hostname -f
+# Should return: pve-01.local or similar
 
-# Check cluster status
+# Check /etc/hosts has proper entries
+cat /etc/hosts
+# Should contain:
+# 192.168.100.11 pve-01.local pve-01
+# 192.168.100.12 pve-02.local pve-02
+
+# If not, add them:
+echo "192.168.100.11 pve-01.local pve-01" >> /etc/hosts
+echo "192.168.100.12 pve-02.local pve-02" >> /etc/hosts
+
+# Create cluster with explicit link
+pvecm create homelab-dev --link0 192.168.100.11
+
+# Verify cluster was created successfully
 pvecm status
+# Should show: Cluster information and Quorum information
+
+# Check corosync configuration
+cat /etc/pve/corosync.conf
+# Should show valid cluster configuration with nodelist
+
+# Verify corosync is running
+systemctl status corosync
+systemctl status pve-cluster
 ```
 
-On **pve-02** and **pve-03**:
+**Troubleshooting if cluster creation failed:**
+
+```bash
+# On pve-01, if cluster creation failed, clean up and retry:
+systemctl stop pve-cluster
+systemctl stop corosync
+rm -rf /etc/pve/corosync.conf
+rm -rf /etc/corosync/*
+rm -rf /var/lib/corosync/*
+
+# Restart services
+systemctl start pve-cluster
+systemctl start corosync
+
+# Try creating cluster again
+pvecm create homelab-dev --link0 192.168.100.11
+```
+
+On **pve-02**:
 
 ```bash
 # SSH to pve-02
 ssh root@192.168.100.12
 
-# Join cluster (use pve-01's IP)
-pvecm add 192.168.100.11
+# Verify hostname and /etc/hosts
+hostname -f
+cat /etc/hosts
 
-# Repeat for pve-03
-ssh root@192.168.100.13
-pvecm add 192.168.100.11
+# Add entries if missing
+echo "192.168.100.11 pve-01.local pve-01" >> /etc/hosts
+echo "192.168.100.12 pve-02.local pve-02" >> /etc/hosts
+
+# Verify connectivity to pve-01
+ping -c 3 192.168.100.11
+ssh-keyscan 192.168.100.11
+
+# Join cluster (use pve-01's IP)
+pvecm add 192.168.100.11 --link0 192.168.100.12
+
+# If prompted for password, enter root password for pve-01
 ```
 
 Verify cluster:
 ```bash
 # On any node
 pvecm status
+# Should show 2 nodes online
+
 pvecm nodes
+# Should list both pve-01 and pve-02
+
+# Check cluster health
+pvecm expected 2
 ```
 
 ### 2.6 Configure Proxmox Storage
@@ -347,10 +404,10 @@ chmod +x /root/create-k8s-cluster.sh
 **VM Distribution**:
 The script distributes VMs across your Proxmox cluster. Update the node assignments in the script as needed:
 ```bash
-create_vm 101 "k8s-control-01" "192.168.100.21" "pve"   # Control plane on pve
-create_vm 201 "k8s-worker-01" "192.168.100.31" "pve"   # Worker 1 on pve
-create_vm 202 "k8s-worker-02" "192.168.100.32" "pve2"  # Worker 2 on pve2
-create_vm 203 "k8s-worker-03" "192.168.100.33" "pve2"  # Worker 3 on pve2
+create_vm 101 "k8s-control-01" "192.168.100.21" "pve-01"   # Control plane on pve
+create_vm 201 "k8s-worker-01" "192.168.100.31" "pve-01"   # Worker 1 on pve
+create_vm 202 "k8s-worker-02" "192.168.100.32" "pve-02"  # Worker 2 on pve2
+create_vm 203 "k8s-worker-03" "192.168.100.33" "pve-02"  # Worker 3 on pve2
 ```
 
 **Wait 2-3 minutes** for cloud-init to complete before attempting SSH access.
