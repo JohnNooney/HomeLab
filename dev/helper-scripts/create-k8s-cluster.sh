@@ -65,8 +65,8 @@ qm set $VM_ID --nameserver 8.8.8.8
 qm set $VM_ID --sshkeys /tmp/ssh_key_$VM_ID.pub
 qm set $VM_ID --ciuser ubuntu
 
-# Resize disk
-qm resize $VM_ID scsi0 +4G
+# Resize disk (add 30GB to the 20GB template base = 50GB total)
+qm resize $VM_ID scsi0 +30G
 
 # Start VM
 qm start $VM_ID

@@ -14,6 +14,9 @@ qm importdisk $TEMPLATE_ID $CLOUD_IMAGE local-lvm
 # Attach disk to VM
 qm set $TEMPLATE_ID --scsihw virtio-scsi-pci --scsi0 local-lvm:vm-$TEMPLATE_ID-disk-0
 
+# Resize disk to 20GB (cloud image is ~2.2GB by default)
+qm resize $TEMPLATE_ID scsi0 20G
+
 # Add cloud-init drive
 qm set $TEMPLATE_ID --ide2 local-lvm:cloudinit
 
