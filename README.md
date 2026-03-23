@@ -4,7 +4,7 @@ Infrastructure and Documentation for my HomeLab setup
 
 # HomeLab Overview
 
-This repository contains the Infrastructure as Code (IaC), configuration management, and deployment manifests for a production-like hybrid cloud homelab. The goal of this project is to apply enterprise-grade DevOps practices—such as state management, secret injection, automated DNS, and GitOps—to a virtualized on-premises environment.
+This repository contains the Infrastructure as Code (IaC), configuration management, and deployment manifests for a production like hybrid cloud homelab. The goal of this project is to apply enterprise grade DevOps practices. Such as state management, secret injection, automated DNS, and GitOps to a virtualized on-premises environment.
 
 By utilizing a Hybrid Cloud Architecture, heavy compute and storage workloads run locally on Proxmox VMs to avoid cloud egress and compute fees, while control plane, state, and security components are offloaded to AWS to ensure high availability and security.
 
