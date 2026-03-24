@@ -1,0 +1,47 @@
+controllers:
+  main:
+    containers:
+      main:
+        image:
+          repository: plexinc/pms-docker
+          tag: latest
+        env:
+          TZ: "America/New_York"
+          PLEX_CLAIM: ""
+
+service:
+  main:
+    type: LoadBalancer
+    ports:
+      http:
+        port: 32400
+
+ingress:
+  main:
+    enabled: true
+    hosts:
+      - host: plex.nooney.dev
+        paths:
+          - path: /
+            pathType: Prefix
+
+persistence:
+  config:
+    enabled: true
+    size: 50Gi
+    accessMode: ReadWriteOnce
+  media:
+    enabled: true
+    type: hostPath
+    hostPath: /mnt/media
+  transcode:
+    enabled: true
+    type: emptyDir
+
+resources:
+  requests:
+    cpu: 1000m
+    memory: 2Gi
+  limits:
+    cpu: 4000m
+    memory: 8Gi

@@ -1,0 +1,48 @@
+controllers:
+  main:
+    containers:
+      main:
+        image:
+          repository: linuxserver/lidarr
+          tag: latest
+        env:
+          TZ: "America/New_York"
+          PUID: "1000"
+          PGID: "1000"
+
+service:
+  main:
+    ports:
+      http:
+        port: 8686
+
+ingress:
+  main:
+    enabled: true
+    hosts:
+      - host: lidarr.nooney.dev
+        paths:
+          - path: /
+            pathType: Prefix
+
+persistence:
+  config:
+    enabled: true
+    size: 10Gi
+    accessMode: ReadWriteOnce
+  music:
+    enabled: true
+    type: hostPath
+    hostPath: /mnt/media/music
+  downloads:
+    enabled: true
+    type: hostPath
+    hostPath: /mnt/downloads
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi

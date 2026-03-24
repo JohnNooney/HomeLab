@@ -1,0 +1,57 @@
+controllers:
+  main:
+    containers:
+      main:
+        image:
+          repository: linuxserver/transmission
+          tag: latest
+        env:
+          TZ: "America/New_York"
+          PUID: "1000"
+          PGID: "1000"
+          USER: "admin"
+          PASS: "changeme"
+
+service:
+  main:
+    ports:
+      http:
+        port: 9091
+  bittorrent:
+    enabled: true
+    type: ClusterIP
+    ports:
+      bittorrent:
+        enabled: true
+        port: 51413
+        protocol: TCP
+
+ingress:
+  main:
+    enabled: true
+    hosts:
+      - host: transmission.nooney.dev
+        paths:
+          - path: /
+            pathType: Prefix
+
+persistence:
+  config:
+    enabled: true
+    size: 5Gi
+    accessMode: ReadWriteOnce
+  downloads:
+    enabled: true
+    type: hostPath
+    hostPath: /mnt/downloads
+  watch:
+    enabled: true
+    type: emptyDir
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
