@@ -1,0 +1,83 @@
+image:
+  tag: release
+
+env:
+  DB_HOSTNAME: postgresql.services.svc.cluster.local
+  DB_DATABASE_NAME: immich
+  DB_USERNAME: postgres
+  DB_PASSWORD: immichdev123
+  REDIS_HOSTNAME: immich-redis
+
+immich:
+  persistence:
+    library:
+      enabled: true
+      size: 20Gi
+      accessMode: ReadWriteOnce
+
+server:
+  enabled: true
+  image:
+    repository: ghcr.io/immich-app/immich-server
+    tag: release
+  ingress:
+    main:
+      enabled: true
+      hosts:
+        - host: photos.nooney.dev
+          paths:
+            - path: /
+              pathType: Prefix
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+microservices:
+  enabled: true
+  image:
+    repository: ghcr.io/immich-app/immich-server
+    tag: release
+  resources:
+    requests:
+      cpu: 200m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+machine-learning:
+  enabled: true
+  image:
+    repository: ghcr.io/immich-app/immich-machine-learning
+    tag: release
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    enabled: false
+  master:
+    persistence:
+      enabled: true
+      size: 1Gi
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 200m
+        memory: 128Mi
+
+postgresql:
+  enabled: false

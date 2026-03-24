@@ -1,0 +1,42 @@
+controllers:
+  main:
+    containers:
+      main:
+        image:
+          repository: homeassistant/home-assistant
+          tag: latest
+        env:
+          TZ: "America/New_York"
+
+service:
+  main:
+    type: NodePort
+    ports:
+      http:
+        port: 8123
+        nodePort: 30812
+
+ingress:
+  main:
+    enabled: true
+    hosts:
+      - host: home.nooney.dev
+        paths:
+          - path: /
+            pathType: Prefix
+
+persistence:
+  config:
+    enabled: true
+    size: 2Gi
+    accessMode: ReadWriteOnce
+
+hostNetwork: false
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi

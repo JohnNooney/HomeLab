@@ -1,0 +1,46 @@
+controllers:
+  main:
+    containers:
+      main:
+        image:
+          repository: linuxserver/bazarr
+          tag: latest
+        env:
+          TZ: "America/New_York"
+          PUID: "1000"
+          PGID: "1000"
+
+service:
+  main:
+    type: NodePort
+    ports:
+      http:
+        port: 6767
+        nodePort: 30676
+
+ingress:
+  main:
+    enabled: true
+    hosts:
+      - host: bazarr.nooney.dev
+        paths:
+          - path: /
+            pathType: Prefix
+
+persistence:
+  config:
+    enabled: true
+    size: 1Gi
+    accessMode: ReadWriteOnce
+  media:
+    enabled: true
+    type: hostPath
+    hostPath: /mnt/media
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi

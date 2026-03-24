@@ -1,0 +1,42 @@
+controllers:
+  main:
+    containers:
+      main:
+        image:
+          repository: linuxserver/prowlarr
+          tag: latest
+        env:
+          TZ: "America/New_York"
+          PUID: "1000"
+          PGID: "1000"
+
+service:
+  main:
+    type: NodePort
+    ports:
+      http:
+        port: 9696
+        nodePort: 30906
+
+ingress:
+  main:
+    enabled: true
+    hosts:
+      - host: prowlarr.nooney.dev
+        paths:
+          - path: /
+            pathType: Prefix
+
+persistence:
+  config:
+    enabled: true
+    size: 1Gi
+    accessMode: ReadWriteOnce
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi

@@ -1,0 +1,50 @@
+controllers:
+  main:
+    containers:
+      main:
+        image:
+          repository: linuxserver/sonarr
+          tag: latest
+        env:
+          TZ: "America/New_York"
+          PUID: "1000"
+          PGID: "1000"
+
+service:
+  main:
+    type: NodePort
+    ports:
+      http:
+        port: 8989
+        nodePort: 30989
+
+ingress:
+  main:
+    enabled: true
+    hosts:
+      - host: sonarr.nooney.dev
+        paths:
+          - path: /
+            pathType: Prefix
+
+persistence:
+  config:
+    enabled: true
+    size: 2Gi
+    accessMode: ReadWriteOnce
+  media:
+    enabled: true
+    type: hostPath
+    hostPath: /mnt/media
+  downloads:
+    enabled: true
+    type: hostPath
+    hostPath: /mnt/downloads
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
