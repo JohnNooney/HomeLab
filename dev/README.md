@@ -926,7 +926,11 @@ helm install plex k8s-home-lab/plex `
   --namespace media `
   --values helm/values/dev/plex.yaml
 
-# Access: http://192.168.100.21:32400/web
+# NOTE: Plex only binds to localhost until initial setup is complete
+# For first-time setup, use port-forward:
+kubectl port-forward -n media deployment/plex 32400:32400
+# Then access: http://localhost:32400/web
+# Complete the setup wizard, then access via NodePort: http://192.168.100.21:32400/web
 ```
 
 **Sonarr** (TV management):

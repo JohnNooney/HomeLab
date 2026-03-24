@@ -1,13 +1,13 @@
-controllers:
-  main:
-    containers:
-      main:
-        image:
-          repository: plexinc/pms-docker
-          tag: latest
-        env:
-          TZ: "America/New_York"
-          PLEX_CLAIM: ""
+image:
+  repository: ghcr.io/home-operations/plex
+  tag: 1.43.0
+  pullPolicy: IfNotPresent
+
+env:
+  TZ: "America/New_York"
+  PLEX_CLAIM: ""
+  ADVERTISE_IP: "http://192.168.100.21:32400/"
+  ALLOWED_NETWORKS: "192.168.100.0/24,10.244.0.0/16"
 
 service:
   main:
@@ -19,12 +19,7 @@ service:
 
 ingress:
   main:
-    enabled: true
-    hosts:
-      - host: plex.nooney.dev
-        paths:
-          - path: /
-            pathType: Prefix
+    enabled: false
 
 persistence:
   config:
@@ -35,11 +30,13 @@ persistence:
     enabled: true
     type: hostPath
     hostPath: /mnt/media
+    mountPath: /mnt/media
   transcode:
     enabled: true
     type: emptyDir
     medium: Memory
     sizeLimit: 2Gi
+    mountPath: /transcode
 
 resources:
   requests:
