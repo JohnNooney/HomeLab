@@ -861,6 +861,15 @@ kubectl get storageclass
 
 Deploy applications to your development cluster using Helm charts based on `helm/README.md`.
 
+**Development-Optimized Values**: Use the dev-specific values files in `helm/values/dev/` which are optimized for low-resource environments:
+- Reduced CPU/memory requests and limits (50-80% smaller)
+- Smaller persistent volume sizes
+- NodePort services for easy access without LoadBalancer
+- Shorter data retention periods
+- Total resource footprint: ~2.5 vCPU, ~6GB RAM, ~60GB storage
+
+See `helm/README.md` for detailed resource comparisons and NodePort assignments.
+
 ### 6.1 Deploy Observability Stack
 
 **Create namespace**:
@@ -874,9 +883,10 @@ kubectl create namespace monitoring
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm repo update
 
-# Install kube-prometheus-stack
+# Install kube-prometheus-stack using dev values
 helm install kube-prometheus-stack prometheus-community/kube-prometheus-stack `
   --namespace monitoring `
+  --values helm/values/dev/prometheus-stack.yaml `
   --set grafana.adminPassword=admin `
   --set grafana.service.type=NodePort `
   --set grafana.service.nodePort=30300 `
@@ -894,74 +904,93 @@ kubectl get pods -n monitoring
 
 ### 6.2 Deploy Media Stack Applications
 
-Based on the Helm values files in `helm/values/`, deploy media applications:
-
 **Create namespace**:
 ```powershell
 kubectl create namespace media
 ```
 
-**Example: Deploy Plex**:
+**Add required Helm repositories**:
 ```powershell
-# Add bjw-s Helm repository
+# Add bjw-s Helm repository (for media apps)
 helm repo add bjw-s https://bjw-s.github.io/helm-charts
 helm repo update
-
-# Create custom values file for dev environment
-# Adjust helm/values/plex.yaml for NodePort and smaller resources
-
-# Install Plex
-helm install plex bjw-s/app-template `
-  --namespace media `
-  --values helm/values/plex.yaml `
-  --set service.main.type=NodePort `
-  --set service.main.ports.http.nodePort=32400
-
-# Verify deployment
-kubectl get pods -n media
 ```
 
-**Access Plex**:
-- URL: `http://192.168.100.21:32400/web`
+**Deploy media applications using dev values**:
 
-### 6.3 Deploy Additional Media Applications
+All media applications use optimized dev values from `helm/values/dev/` with NodePort services pre-configured.
 
-Following the pattern from `helm/README.md`, deploy:
+**Plex** (Media Server):
+```powershell
+helm install plex bjw-s/app-template `
+  --namespace media `
+  --values helm/values/dev/plex.yaml
+
+# Access: http://192.168.100.21:32400/web
+```
 
 **Sonarr** (TV management):
 ```powershell
 helm install sonarr bjw-s/app-template `
   --namespace media `
-  --values helm/values/sonarr.yaml `
-  --set service.main.type=NodePort `
-  --set service.main.ports.http.nodePort=30989
+  --values helm/values/dev/sonarr.yaml
+
+# Access: http://192.168.100.21:30989
 ```
 
 **Radarr** (Movie management):
 ```powershell
 helm install radarr bjw-s/app-template `
   --namespace media `
-  --values helm/values/radarr.yaml `
-  --set service.main.type=NodePort `
-  --set service.main.ports.http.nodePort=30787
+  --values helm/values/dev/radarr.yaml
+
+# Access: http://192.168.100.21:30787
 ```
 
 **Prowlarr** (Indexer management):
 ```powershell
 helm install prowlarr bjw-s/app-template `
   --namespace media `
-  --values helm/values/prowlarr.yaml `
-  --set service.main.type=NodePort `
-  --set service.main.ports.http.nodePort=30906
+  --values helm/values/dev/prowlarr.yaml
+
+# Access: http://192.168.100.21:30906
+```
+
+**Lidarr** (Music management):
+```powershell
+helm install lidarr bjw-s/app-template `
+  --namespace media `
+  --values helm/values/dev/lidarr.yaml
+
+# Access: http://192.168.100.21:30868
+```
+
+**Bazarr** (Subtitle management):
+```powershell
+helm install bazarr bjw-s/app-template `
+  --namespace media `
+  --values helm/values/dev/bazarr.yaml
+
+# Access: http://192.168.100.21:30676
 ```
 
 **Transmission** (Torrent client):
 ```powershell
 helm install transmission bjw-s/app-template `
   --namespace media `
-  --values helm/values/transmission.yaml `
-  --set service.main.type=NodePort `
-  --set service.main.ports.http.nodePort=30091
+  --values helm/values/dev/transmission.yaml
+
+# Access: http://192.168.100.21:30091
+```
+
+### 6.3 Verify Media Stack Deployment
+
+```powershell
+# Check all pods in media namespace
+kubectl get pods -n media
+
+# Check services and NodePorts
+kubectl get svc -n media
 ```
 
 ### 6.4 Deploy Services Stack
@@ -975,32 +1004,52 @@ kubectl create namespace services
 ```powershell
 helm install home-assistant bjw-s/app-template `
   --namespace services `
-  --values helm/values/home-assistant.yaml `
-  --set service.main.type=NodePort `
-  --set service.main.ports.http.nodePort=30812
+  --values helm/values/dev/home-assistant.yaml
+
+# Access: http://192.168.100.21:30812
 ```
 
-**Immich** (with PostgreSQL):
+**Immich** (Photo management with PostgreSQL):
 ```powershell
 # Deploy PostgreSQL first
 helm repo add bitnami https://charts.bitnami.com/bitnami
 helm install postgresql bitnami/postgresql `
   --namespace services `
   --set auth.database=immich `
-  --set auth.password=immichdev123
+  --set auth.password=immichdev123 `
+  --set primary.resources.requests.cpu=100m `
+  --set primary.resources.requests.memory=256Mi `
+  --set primary.resources.limits.cpu=500m `
+  --set primary.resources.limits.memory=512Mi `
+  --set primary.persistence.size=5Gi
 
-# Deploy Immich
+# Deploy Immich using dev values
 helm repo add immich https://immich-app.github.io/immich-charts
 helm install immich immich/immich `
   --namespace services `
-  --values helm/values/immich.yaml `
-  --set service.main.type=NodePort `
-  --set service.main.ports.http.nodePort=30283
+  --values helm/values/dev/immich.yaml
+
+# Access: http://192.168.100.21:30283 (check actual NodePort with kubectl get svc -n services)
 ```
 
 ### 6.5 Using Terraform for Application Deployment (Optional)
 
 For a production-like workflow using Terraform as described in `helm/README.md`:
+
+**Update Terraform to use dev values files**:
+```hcl
+# In terraform/homelab/media.tf, reference dev values:
+resource "helm_release" "plex" {
+  name       = "plex"
+  repository = "https://bjw-s.github.io/helm-charts"
+  chart      = "app-template"
+  namespace  = kubernetes_namespace.media.metadata[0].name
+
+  values = [
+    file("${path.module}/../../helm/values/dev/plex.yaml")
+  ]
+}
+```
 
 **Create dev-specific Terraform configuration**:
 ```powershell
@@ -1009,7 +1058,7 @@ cd terraform/homelab
 
 # Create dev.tfvars
 @"
-domain = "homelab.local"
+domain = "nooney.dev"
 grafana_admin_password = "admin"
 environment = "development"
 "@ | Out-File -FilePath dev.tfvars

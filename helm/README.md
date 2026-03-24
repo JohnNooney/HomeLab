@@ -53,7 +53,7 @@ HomeLab/
 └── helm/
     ├── README.md                   # This file
     └── values/                     # Helm values files
-        ├── prometheus-stack.yaml
+        ├── prometheus-stack.yaml   # Production values
         ├── plex.yaml
         ├── sonarr.yaml
         ├── radarr.yaml
@@ -63,7 +63,17 @@ HomeLab/
         ├── transmission.yaml
         ├── home-assistant.yaml
         ├── immich.yaml
-        └── ...
+        └── dev/                    # Development environment values
+            ├── prometheus-stack.yaml
+            ├── plex.yaml
+            ├── sonarr.yaml
+            ├── radarr.yaml
+            ├── prowlarr.yaml
+            ├── lidarr.yaml
+            ├── bazarr.yaml
+            ├── transmission.yaml
+            ├── home-assistant.yaml
+            └── immich.yaml
 ```
 
 ### Terraform Configuration
@@ -93,6 +103,56 @@ provider "helm" {
   }
 }
 ```
+
+### Development Environment Values
+
+For testing in resource-constrained development clusters (see `dev/README.md`), optimized values files are available in `values/dev/`:
+
+**Key Differences from Production**:
+- **Reduced Resources**: CPU/memory requests and limits reduced by 50-80%
+- **Smaller Storage**: PVC sizes reduced to fit dev cluster constraints
+- **NodePort Services**: All services use NodePort instead of LoadBalancer for easy access
+- **Shorter Retention**: Prometheus retention reduced from 30d to 7d
+- **Memory-backed Volumes**: Plex transcoding uses memory-backed emptyDir
+
+**Resource Comparison**:
+| Component | Production | Development | Savings |
+|-----------|-----------|-------------|---------|
+| Prometheus | 2000m CPU / 4Gi RAM | 500m CPU / 1Gi RAM | 75% |
+| Plex | 4000m CPU / 8Gi RAM | 2000m CPU / 2Gi RAM | 75% |
+| Media Apps | 1000m CPU / 1Gi RAM | 500m CPU / 512Mi RAM | 50% |
+
+**NodePort Assignments** (Dev):
+- Plex: 32400
+- Sonarr: 30989
+- Radarr: 30787
+- Prowlarr: 30906
+- Lidarr: 30868
+- Bazarr: 30676
+- Transmission: 30091 (web), 30514 (torrent)
+- Home Assistant: 30812
+
+**Usage with Terraform**:
+```hcl
+# Use dev values instead of production
+values = [
+  file("${path.module}/../helm/values/dev/plex.yaml")
+]
+```
+
+**Usage with Helm CLI**:
+```bash
+helm install plex bjw-s/app-template \
+  --namespace media \
+  --values helm/values/dev/plex.yaml
+```
+
+**Estimated Total Resources** (All Apps):
+- Total CPU requests: ~2.5 vCPU
+- Total Memory requests: ~6GB
+- Total Storage: ~60GB
+
+This fits comfortably in a dev cluster with 1 control plane (4GB RAM) + 3 workers (2GB RAM each).
 
 ### Deployment Steps
 
