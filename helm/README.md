@@ -9,7 +9,7 @@ This directory contains **Helm values files** for deploying applications to the 
 - Documentation for the deployment approach
 
 All Helm charts are sourced from public repositories such as:
-- **bjw-s/helm-charts** (formerly k8s-at-home): Media applications (Plex, Sonarr, Radarr, etc.)
+- **k8s-home-lab/helm-charts**: Media applications (Plex, Sonarr, Radarr, etc.) - successor to k8s-at-home
 - **Prometheus Community**: Monitoring stack (kube-prometheus-stack)
 - **Bitnami**: Databases and common services (PostgreSQL, Redis, etc.)
 - **Official repositories**: Application-specific charts (Immich, Home Assistant, etc.)
@@ -142,7 +142,7 @@ values = [
 
 **Usage with Helm CLI**:
 ```bash
-helm install plex bjw-s/app-template \
+helm install plex k8s-home-lab/helm-charts/plex \
   --namespace media \
   --values helm/values/dev/plex.yaml
 ```
@@ -231,7 +231,7 @@ resource "kubernetes_namespace" "media" {
 # Plex Media Server
 resource "helm_release" "plex" {
   name       = "plex"
-  repository = "https://k8s-at-home.com/charts/"
+  repository = "https://k8s-home-lab.github.io/helm-charts/"
   chart      = "plex"
   namespace  = kubernetes_namespace.media.metadata[0].name
 
@@ -248,7 +248,7 @@ resource "helm_release" "plex" {
 # Sonarr
 resource "helm_release" "sonarr" {
   name       = "sonarr"
-  repository = "https://k8s-at-home.com/charts/"
+  repository = "https://k8s-home-lab.github.io/helm-charts/"
   chart      = "sonarr"
   namespace  = kubernetes_namespace.media.metadata[0].name
 
@@ -260,7 +260,7 @@ resource "helm_release" "sonarr" {
 # Radarr
 resource "helm_release" "radarr" {
   name       = "radarr"
-  repository = "https://k8s-at-home.com/charts/"
+  repository = "https://k8s-home-lab.github.io/helm-charts/"
   chart      = "radarr"
   namespace  = kubernetes_namespace.media.metadata[0].name
 
@@ -272,7 +272,7 @@ resource "helm_release" "radarr" {
 # Prowlarr
 resource "helm_release" "prowlarr" {
   name       = "prowlarr"
-  repository = "https://k8s-at-home.com/charts/"
+  repository = "https://k8s-home-lab.github.io/helm-charts/"
   chart      = "prowlarr"
   namespace  = kubernetes_namespace.media.metadata[0].name
 
@@ -284,7 +284,7 @@ resource "helm_release" "prowlarr" {
 # Lidarr
 resource "helm_release" "lidarr" {
   name       = "lidarr"
-  repository = "https://k8s-at-home.com/charts/"
+  repository = "https://k8s-home-lab.github.io/helm-charts/"
   chart      = "lidarr"
   namespace  = kubernetes_namespace.media.metadata[0].name
 
@@ -296,7 +296,7 @@ resource "helm_release" "lidarr" {
 # Bazarr
 resource "helm_release" "bazarr" {
   name       = "bazarr"
-  repository = "https://k8s-at-home.com/charts/"
+  repository = "https://k8s-home-lab.github.io/helm-charts/"
   chart      = "bazarr"
   namespace  = kubernetes_namespace.media.metadata[0].name
 
@@ -308,7 +308,7 @@ resource "helm_release" "bazarr" {
 # Transmission
 resource "helm_release" "transmission" {
   name       = "transmission"
-  repository = "https://k8s-at-home.com/charts/"
+  repository = "https://k8s-home-lab.github.io/helm-charts/"
   chart      = "transmission"
   namespace  = kubernetes_namespace.media.metadata[0].name
 
@@ -349,7 +349,7 @@ resource "kubernetes_namespace" "services" {
 # Home Assistant
 resource "helm_release" "home_assistant" {
   name       = "home-assistant"
-  repository = "https://k8s-at-home.com/charts/"
+  repository = "https://k8s-home-lab.github.io/helm-charts/"
   chart      = "home-assistant"
   namespace  = kubernetes_namespace.services.metadata[0].name
 

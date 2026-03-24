@@ -911,8 +911,8 @@ kubectl create namespace media
 
 **Add required Helm repositories**:
 ```powershell
-# Add bjw-s Helm repository (for media apps)
-helm repo add bjw-s https://bjw-s.github.io/helm-charts
+# Add k8s-home-lab Helm repository (for media apps)
+helm repo add k8s-home-lab https://k8s-home-lab.github.io/helm-charts/
 helm repo update
 ```
 
@@ -922,7 +922,7 @@ All media applications use optimized dev values from `helm/values/dev/` with Nod
 
 **Plex** (Media Server):
 ```powershell
-helm install plex bjw-s/app-template `
+helm install plex k8s-home-lab/plex `
   --namespace media `
   --values helm/values/dev/plex.yaml
 
@@ -931,7 +931,7 @@ helm install plex bjw-s/app-template `
 
 **Sonarr** (TV management):
 ```powershell
-helm install sonarr bjw-s/app-template `
+helm install sonarr k8s-home-lab/sonarr `
   --namespace media `
   --values helm/values/dev/sonarr.yaml
 
@@ -940,7 +940,7 @@ helm install sonarr bjw-s/app-template `
 
 **Radarr** (Movie management):
 ```powershell
-helm install radarr bjw-s/app-template `
+helm install radarr k8s-home-lab/radarr `
   --namespace media `
   --values helm/values/dev/radarr.yaml
 
@@ -949,7 +949,7 @@ helm install radarr bjw-s/app-template `
 
 **Prowlarr** (Indexer management):
 ```powershell
-helm install prowlarr bjw-s/app-template `
+helm install prowlarr k8s-home-lab/prowlarr `
   --namespace media `
   --values helm/values/dev/prowlarr.yaml
 
@@ -958,7 +958,7 @@ helm install prowlarr bjw-s/app-template `
 
 **Lidarr** (Music management):
 ```powershell
-helm install lidarr bjw-s/app-template `
+helm install lidarr k8s-home-lab/lidarr `
   --namespace media `
   --values helm/values/dev/lidarr.yaml
 
@@ -967,7 +967,7 @@ helm install lidarr bjw-s/app-template `
 
 **Bazarr** (Subtitle management):
 ```powershell
-helm install bazarr bjw-s/app-template `
+helm install bazarr k8s-home-lab/bazarr `
   --namespace media `
   --values helm/values/dev/bazarr.yaml
 
@@ -976,7 +976,7 @@ helm install bazarr bjw-s/app-template `
 
 **Transmission** (Torrent client):
 ```powershell
-helm install transmission bjw-s/app-template `
+helm install transmission k8s-home-lab/transmission `
   --namespace media `
   --values helm/values/dev/transmission.yaml
 
@@ -1002,7 +1002,7 @@ kubectl create namespace services
 
 **Home Assistant**:
 ```powershell
-helm install home-assistant bjw-s/app-template `
+helm install home-assistant k8s-home-lab/home-assistant `
   --namespace services `
   --values helm/values/dev/home-assistant.yaml
 
@@ -1041,8 +1041,8 @@ For a production-like workflow using Terraform as described in `helm/README.md`:
 # In terraform/homelab/media.tf, reference dev values:
 resource "helm_release" "plex" {
   name       = "plex"
-  repository = "https://bjw-s.github.io/helm-charts"
-  chart      = "app-template"
+  repository = "https://k8s-home-lab.github.io/helm-charts/"
+  chart      = "plex"
   namespace  = kubernetes_namespace.media.metadata[0].name
 
   values = [
