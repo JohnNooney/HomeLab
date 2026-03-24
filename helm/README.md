@@ -195,37 +195,14 @@ resource "helm_release" "kube_prometheus_stack" {
 }
 ```
 
-**values/prometheus-stack.yaml**:
-```yaml
-prometheus:
-  prometheusSpec:
-    retention: 30d
-    storageSpec:
-      volumeClaimTemplate:
-        spec:
-          accessModes: ["ReadWriteOnce"]
-          resources:
-            requests:
-              storage: 50Gi
+**Values Configuration**:
+- **Production**: See `values/prometheus-stack.yaml` for full configuration
+- **Development**: See `values/dev/prometheus-stack.yaml` for resource-optimized settings
 
-grafana:
-  persistence:
-    enabled: true
-    size: 10Gi
-  plugins:
-    - grafana-piechart-panel
-    - grafana-worldmap-panel
-
-alertmanager:
-  alertmanagerSpec:
-    storage:
-      volumeClaimTemplate:
-        spec:
-          accessModes: ["ReadWriteOnce"]
-          resources:
-            requests:
-              storage: 10Gi
-```
+Key features:
+- 30-day retention (7 days in dev)
+- Persistent storage for Prometheus, Grafana, and Alertmanager
+- Pre-configured Grafana plugins
 
 **Deploy**:
 ```bash
@@ -341,43 +318,16 @@ resource "helm_release" "transmission" {
 }
 ```
 
-**Example values/plex.yaml**:
-```yaml
-image:
-  repository: plexinc/pms-docker
-  tag: latest
+**Values Configuration**:
+Each media application has dedicated values files:
+- **Production**: `values/plex.yaml`, `values/sonarr.yaml`, `values/radarr.yaml`, etc.
+- **Development**: `values/dev/plex.yaml`, `values/dev/sonarr.yaml`, etc.
 
-env:
-  TZ: "America/New_York"
-
-service:
-  main:
-    type: LoadBalancer
-    ports:
-      http:
-        port: 32400
-
-ingress:
-  main:
-    enabled: true
-    hosts:
-      - host: plex.nooney.dev
-        paths:
-          - path: /
-            pathType: Prefix
-
-persistence:
-  config:
-    enabled: true
-    size: 50Gi
-  media:
-    enabled: true
-    type: hostPath
-    hostPath: /mnt/media
-  transcode:
-    enabled: true
-    type: emptyDir
-```
+Key features configured in values files:
+- Persistent storage for configuration and media
+- Ingress with custom domain support
+- Host path mounts for shared media library
+- Resource limits and requests
 
 **Deploy Media Stack**:
 ```bash
