@@ -176,7 +176,7 @@ terraform apply -target=helm_release.kube_prometheus_stack
 ```
 
 **Access Grafana**:
-- URL: `https://grafana.yourdomain.com`
+- URL: `https://grafana.nooney.dev`
 - Username: `admin`
 - Password: Set via `var.grafana_admin_password`
 
@@ -301,7 +301,7 @@ ingress:
   main:
     enabled: true
     hosts:
-      - host: plex.yourdomain.com
+      - host: plex.nooney.dev
         paths:
           - path: /
             pathType: Prefix
@@ -450,16 +450,16 @@ kubectl logs -n external-dns -l app.kubernetes.io/name=external-dns
 ### Accessing Applications
 
 After deployment, applications are accessible via their configured ingresses:
-- **Grafana**: `https://grafana.yourdomain.com`
-- **Plex**: `https://plex.yourdomain.com`
-- **Sonarr**: `https://sonarr.yourdomain.com`
-- **Radarr**: `https://radarr.yourdomain.com`
-- **Prowlarr**: `https://prowlarr.yourdomain.com`
-- **Lidarr**: `https://lidarr.yourdomain.com`
-- **Bazarr**: `https://bazarr.yourdomain.com`
-- **Transmission**: `https://transmission.yourdomain.com`
-- **Home Assistant**: `https://home.yourdomain.com`
-- **Immich**: `https://photos.yourdomain.com`
+- **Grafana**: `https://grafana.nooney.dev`
+- **Plex**: `https://plex.nooney.dev`
+- **Sonarr**: `https://sonarr.nooney.dev`
+- **Radarr**: `https://radarr.nooney.dev`
+- **Prowlarr**: `https://prowlarr.nooney.dev`
+- **Lidarr**: `https://lidarr.nooney.dev`
+- **Bazarr**: `https://bazarr.nooney.dev`
+- **Transmission**: `https://transmission.nooney.dev`
+- **Home Assistant**: `https://home.nooney.dev`
+- **Immich**: `https://photos.nooney.dev`
 
 ### Troubleshooting
 
@@ -500,7 +500,7 @@ kubectl get ingress -n media
 kubectl logs -n ingress-nginx -l app.kubernetes.io/name=ingress-nginx
 
 # Verify DNS records
-nslookup plex.yourdomain.com
+nslookup plex.nooney.dev
 ```
 
 ### Best Practices
