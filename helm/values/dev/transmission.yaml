@@ -1,33 +1,39 @@
-controllers:
-  main:
-    containers:
-      main:
-        image:
-          repository: linuxserver/transmission
-          tag: latest
-        env:
-          TZ: "America/New_York"
-          PUID: "1000"
-          PGID: "1000"
-          USER: "admin"
-          PASS: "changeme"
+image:
+  repository: linuxserver/transmission
+  tag: latest
+  pullPolicy: IfNotPresent
+
+env:
+  TZ: "America/New_York"
+  PUID: "1000"
+  PGID: "1000"
 
 service:
-  main:
+  web:
     type: NodePort
-    ports:
-      http:
-        port: 9091
-        nodePort: 30091
-  bittorrent:
+    port: 9091
+    annotations: {}
+    # Actual NodePort assigned: 31364 (auto-assigned by Kubernetes)
+  torrent:
     enabled: true
     type: NodePort
-    ports:
-      bittorrent:
-        enabled: true
-        port: 51413
-        nodePort: 30514
-        protocol: TCP
+    tcpPort: 51413
+    udpPort: 51413
+    annotations: {}
+    # Actual NodePort assigned: 31560 (auto-assigned by Kubernetes)
+
+initContainers:
+  - name: create-dirs
+    image: busybox:latest
+    command:
+      - sh
+      - -c
+      - |
+        mkdir -p /downloads/complete /downloads/incomplete
+        chown -R 1000:1000 /downloads
+    volumeMounts:
+      - name: downloads
+        mountPath: /downloads
 
 ingress:
   main:
@@ -41,15 +47,28 @@ ingress:
 persistence:
   config:
     enabled: true
-    size: 1Gi
+    storageClassName: "local-path"
     accessMode: ReadWriteOnce
+    size: 1Gi
+    existingClaim: ""
   downloads:
     enabled: true
-    type: hostPath
-    hostPath: /mnt/downloads
-  watch:
-    enabled: true
-    type: emptyDir
+    type: pvc
+    storageClassName: "local-path"
+    accessMode: ReadWriteOnce
+    size: 10Gi
+    existingClaim: ""
+    # Note: For production, use NFS with ReadWriteMany to share downloads with other media apps
+    # nfsServer: "192.168.100.21" (or whatever the nfs server will be - likely the RPi)
+    # nfsPath: "/mnt/downloads"
+
+extraVolumes:
+  - name: watch
+    emptyDir: {}
+
+extraVolumeMounts:
+  - name: watch
+    mountPath: /watch
 
 resources:
   requests:

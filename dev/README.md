@@ -931,6 +931,7 @@ helm install plex k8s-home-lab/plex `
 kubectl port-forward -n media deployment/plex 32400:32400
 # Then access: http://localhost:32400/web
 # Complete the setup wizard, then access via NodePort: http://192.168.100.21:32400/web
+# Address may be one of the other workers, so check the other Node IPs if above isn't accessible
 ```
 
 **Sonarr** (TV management):
@@ -980,11 +981,14 @@ helm install bazarr k8s-home-lab/bazarr `
 
 **Transmission** (Torrent client):
 ```powershell
-helm install transmission k8s-home-lab/transmission `
+# Add lexfrei helm repository (OCI-based)
+helm install transmission `
+  oci://ghcr.io/lexfrei/charts/transmission `
   --namespace media `
   --values helm/values/dev/transmission.yaml
 
 # Access: http://192.168.100.21:30091
+# Address may be one of the other workers, so check the other Node IPs if above isn't accessible
 ```
 
 ### 6.3 Verify Media Stack Deployment

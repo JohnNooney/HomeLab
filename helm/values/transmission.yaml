@@ -1,30 +1,24 @@
-controllers:
-  main:
-    containers:
-      main:
-        image:
-          repository: linuxserver/transmission
-          tag: latest
-        env:
-          TZ: "America/New_York"
-          PUID: "1000"
-          PGID: "1000"
-          USER: "admin"
-          PASS: "changeme"
+image:
+  repository: linuxserver/transmission
+  tag: latest
+  pullPolicy: IfNotPresent
+
+env:
+  TZ: "America/New_York"
+  PUID: "1000"
+  PGID: "1000"
 
 service:
-  main:
-    ports:
-      http:
-        port: 9091
-  bittorrent:
-    enabled: true
+  web:
     type: ClusterIP
-    ports:
-      bittorrent:
-        enabled: true
-        port: 51413
-        protocol: TCP
+    port: 9091
+    annotations: {}
+  torrent:
+    enabled: true
+    type: LoadBalancer
+    tcpPort: 51413
+    udpPort: 51413
+    annotations: {}
 
 ingress:
   main:
@@ -38,15 +32,19 @@ ingress:
 persistence:
   config:
     enabled: true
-    size: 5Gi
+    storageClassName: ""
     accessMode: ReadWriteOnce
+    size: 5Gi
+    existingClaim: ""
   downloads:
     enabled: true
-    type: hostPath
-    hostPath: /mnt/downloads
-  watch:
-    enabled: true
-    type: emptyDir
+    type: nfs
+    nfsServer: "nfs-server.example.com"
+    nfsPath: "/mnt/downloads"
+    storageClassName: ""
+    accessMode: ReadWriteMany
+    size: 100Gi
+    existingClaim: ""
 
 resources:
   requests:
