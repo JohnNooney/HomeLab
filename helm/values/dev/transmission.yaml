@@ -4,7 +4,7 @@ image:
   pullPolicy: IfNotPresent
 
 env:
-  TZ: "America/New_York"
+  TZ: "Europe/London"
   PUID: "1000"
   PGID: "1000"
 

@@ -1,14 +1,10 @@
-controllers:
-  main:
-    containers:
-      main:
-        image:
-          repository: linuxserver/radarr
-          tag: latest
-        env:
-          TZ: "America/New_York"
-          PUID: "1000"
-          PGID: "1000"
+image:
+  repository: ghcr.io/home-operations/radarr
+  tag:
+  pullPolicy: IfNotPresent
+
+env:
+  TZ: Europe/London
 
 service:
   main:
@@ -25,6 +21,24 @@ ingress:
           - path: /
             pathType: Prefix
 
+probes:
+  liveness:
+    enabled: true
+    custom: true
+    spec:
+      exec:
+        command:
+        - /usr/bin/env
+        - bash
+        - -c
+        - curl --fail localhost:7878/api/v3/system/status?apiKey=`IFS=\> && while
+          read -d \< E C; do if [[ $E = "ApiKey" ]]; then echo $C; fi; done < /config/config.xml`
+      failureThreshold: 5
+      initialDelaySeconds: 60
+      periodSeconds: 10
+      successThreshold: 1
+      timeoutSeconds: 10
+
 persistence:
   config:
     enabled: true
@@ -32,10 +46,12 @@ persistence:
     accessMode: ReadWriteOnce
   media:
     enabled: true
+    mountPath: /media
     type: hostPath
     hostPath: /mnt/media
   downloads:
     enabled: true
+    mountPath: /downloads
     type: hostPath
     hostPath: /mnt/downloads
 
@@ -46,3 +62,23 @@ resources:
   limits:
     cpu: 1000m
     memory: 1Gi
+
+metrics:
+  enabled: false
+  serviceMonitor:
+    interval: 3m
+    scrapeTimeout: 1m
+    labels: {}
+  prometheusRule:
+    enabled: false
+    labels: {}
+    rules: []
+  exporter:
+    image:
+      repository: ghcr.io/onedr0p/exportarr
+      tag: v2.3.0
+      pullPolicy: IfNotPresent
+    env:
+      port: 9793
+      additionalMetrics: false
+      unknownQueueItems: false

@@ -6,7 +6,7 @@ controllers:
           repository: plexinc/pms-docker
           tag: latest
         env:
-          TZ: "America/New_York"
+          TZ: "Europe/London"
           PLEX_CLAIM: ""
 
 service:

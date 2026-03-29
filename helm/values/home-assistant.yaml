@@ -6,7 +6,7 @@ controllers:
           repository: homeassistant/home-assistant
           tag: latest
         env:
-          TZ: "America/New_York"
+          TZ: "Europe/London"
 
 service:
   main:

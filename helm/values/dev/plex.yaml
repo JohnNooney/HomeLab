@@ -4,7 +4,7 @@ image:
   pullPolicy: IfNotPresent
 
 env:
-  TZ: "America/New_York"
+  TZ: "Europe/London"
   PLEX_CLAIM: ""
   ADVERTISE_IP: "http://192.168.100.21:32400/"
   ALLOWED_NETWORKS: "192.168.100.0/24,10.244.0.0/16"

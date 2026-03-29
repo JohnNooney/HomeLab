@@ -1,14 +1,10 @@
-controllers:
-  main:
-    containers:
-      main:
-        image:
-          repository: linuxserver/bazarr
-          tag: latest
-        env:
-          TZ: "America/New_York"
-          PUID: "1000"
-          PGID: "1000"
+image:
+  repository: ghcr.io/home-operations/bazarr
+  tag:
+  pullPolicy: IfNotPresent
+
+env:
+  TZ: Europe/London
 
 service:
   main:
@@ -34,6 +30,7 @@ persistence:
     accessMode: ReadWriteOnce
   media:
     enabled: true
+    mountPath: /media
     type: hostPath
     hostPath: /mnt/media
 
