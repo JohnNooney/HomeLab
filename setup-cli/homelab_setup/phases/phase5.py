@@ -227,11 +227,31 @@ def _step_deploy_cni(config: dict[str, Any]) -> bool:
 
     try:
         if cni == "Calico":
-            info("Deploying Calico...")
+            info("Deploying Calico with VXLAN overlay (BGP disabled)...")
             run_local(
                 "kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.26.0/manifests/calico.yaml",
                 stream=True,
             )
+            info("Configuring Calico for VXLAN mode...")
+            # Disable BGP, enable VXLAN for Proxmox/home lab compatibility
+            run_local(
+                'kubectl set env daemonset/calico-node -n kube-system '
+                'CALICO_NETWORKING_BACKEND=vxlan '
+                'CALICO_IPV4POOL_VXLAN=Always',
+                check=False,
+            )
+            run_local(
+                'kubectl set env deployment/calico-kube-controllers -n kube-system '
+                'CALICO_NETWORKING_BACKEND=vxlan',
+                check=False,
+            )
+            info("Waiting for Calico pods to be ready...")
+            rc, _, _ = run_local(
+                "kubectl wait --for=condition=ready pod -l k8s-app=calico-node -n kube-system --timeout=120s",
+                check=False,
+            )
+            if rc != 0:
+                warn("Calico pods not ready after 120s. Continuing but cluster may have networking issues.")
         else:
             info("Deploying Cilium via Helm...")
             run_local("helm repo add cilium https://helm.cilium.io/ 2>/dev/null || true")
@@ -241,6 +261,11 @@ def _step_deploy_cni(config: dict[str, Any]) -> bool:
                 "--namespace kube-system "
                 "--set operator.replicas=1",
                 stream=True,
+            )
+            info("Waiting for Cilium pods to be ready...")
+            run_local(
+                "kubectl wait --for=condition=ready pod -l k8s-app=cilium -n kube-system --timeout=120s",
+                check=False,
             )
 
         success(f"{cni} deployed")
@@ -295,44 +320,118 @@ def _step_deploy_storage() -> bool:
 
 
 def _install_nginx_ingress() -> None:
-    """Install nginx-ingress via Helm (used by both paths)."""
+    """Install or upgrade nginx-ingress via Helm (used by both paths)."""
+    from homelab_setup.utils import info
+
     run_local("helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx 2>/dev/null || true")
     run_local("helm repo update")
-    run_local(
-        "helm install ingress-nginx ingress-nginx/ingress-nginx "
-        "--namespace ingress-nginx "
-        "--create-namespace "
-        "--set controller.service.type=NodePort "
-        "--set controller.service.nodePorts.http=30080 "
-        "--set controller.service.nodePorts.https=30443",
-        stream=True,
+
+    # Check if release already exists
+    rc, _, _ = run_local(
+        "helm status ingress-nginx -n ingress-nginx 2>/dev/null",
+        check=False,
     )
+
+    if rc == 0:
+        info("nginx-ingress release already exists, upgrading...")
+        run_local(
+            "helm upgrade ingress-nginx ingress-nginx/ingress-nginx "
+            "--namespace ingress-nginx "
+            "--set controller.service.type=NodePort "
+            "--set controller.service.nodePorts.http=30080 "
+            "--set controller.service.nodePorts.https=30443",
+            stream=True,
+        )
+    else:
+        run_local(
+            "helm install ingress-nginx ingress-nginx/ingress-nginx "
+            "--namespace ingress-nginx "
+            "--create-namespace "
+            "--set controller.service.type=NodePort "
+            "--set controller.service.nodePorts.http=30080 "
+            "--set controller.service.nodePorts.https=30443",
+            stream=True,
+        )
 
 
 def _step_validation_checklist() -> bool:
     """Run validation checks on the cluster."""
-    step_num = 5  # varies but always last
     console.print()
     console.rule("[bold cyan]Validation Checklist[/bold cyan]", style="cyan")
 
-    checks = [
-        ("kubectl get nodes", "All nodes Ready"),
-        ("kubectl get pods --all-namespaces", "All pods Running"),
-        (
-            "kubectl run -it --rm dns-test --image=busybox --restart=Never -- nslookup kubernetes.default 2>/dev/null",
-            "DNS resolution",
-        ),
-        ("kubectl get pods -n ingress-nginx 2>/dev/null || kubectl get pods -n kube-system -l app.kubernetes.io/name=traefik 2>/dev/null", "Ingress controller"),
-        ("kubectl get storageclass", "Storage class"),
-    ]
-
     all_ok = True
-    for cmd, label in checks:
-        rc, stdout, _ = run_local(cmd, check=False)
-        if rc == 0:
-            success(f"{label}")
+    failed_checks = []
+
+    # Check 1: Nodes
+    rc, stdout, stderr = run_local("kubectl get nodes", check=False)
+    if rc == 0 and "NotReady" not in stdout and "Not Ready" not in stdout:
+        success("All nodes Ready")
+    else:
+        warn("Nodes check failed")
+        failed_checks.append(("Nodes", "kubectl get nodes", stdout + stderr))
+        all_ok = False
+
+    # Check 2: Pods
+    rc, stdout, stderr = run_local("kubectl get pods --all-namespaces", check=False)
+    if rc == 0:
+        pending = stdout.count("Pending")
+        crash = stdout.count("CrashLoopBackOff")
+        error_pods = stdout.count("Error")
+        if pending == 0 and crash == 0 and error_pods == 0:
+            success("All pods Running")
         else:
-            warn(f"{label} — check manually")
+            warn(f"Pods issues: {pending} Pending, {crash} CrashLoop, {error_pods} Error")
+            failed_checks.append(("Pods", "kubectl get pods --all-namespaces", stdout))
             all_ok = False
+    else:
+        warn("Pods check failed")
+        failed_checks.append(("Pods", "kubectl get pods --all-namespaces", stderr))
+        all_ok = False
+
+    # Check 3: DNS Resolution
+    rc, stdout, stderr = run_local(
+        "kubectl run dns-test --image=busybox --rm -i --restart=Never -- nslookup kubernetes.default",
+        check=False
+    )
+    if rc == 0 and "kubernetes.default" in stdout.lower() or "10.96" in stdout:
+        success("DNS resolution working")
+    else:
+        warn("DNS resolution — needs verification")
+        failed_checks.append(("DNS", "nslookup kubernetes.default", stderr or stdout))
+        all_ok = False
+        console.print("\n[dim]To verify DNS manually, run:[/dim]")
+        console.print("  kubectl run debug --image=busybox --rm -it --restart=Never -- nslookup kubernetes.default")
+        console.print("  kubectl run debug --image=busybox --rm -it --restart=Never -- nslookup google.com")
+        console.print("  kubectl get pods -n kube-system -l k8s-app=kube-dns")
+        console.print("  kubectl logs -n kube-system -l k8s-app=kube-dns")
+
+    # Check 4: Ingress
+    rc, _, _ = run_local(
+        "kubectl get pods -n ingress-nginx 2>/dev/null || kubectl get pods -n kube-system -l app.kubernetes.io/name=traefik 2>/dev/null",
+        check=False
+    )
+    if rc == 0:
+        success("Ingress controller running")
+    else:
+        warn("Ingress controller check failed")
+        failed_checks.append(("Ingress", "kubectl get pods -n ingress-nginx", ""))
+        all_ok = False
+
+    # Check 5: Storage
+    rc, stdout, stderr = run_local("kubectl get storageclass", check=False)
+    if rc == 0 and "local-path" in stdout:
+        success("Storage class configured")
+    else:
+        warn("Storage class check failed")
+        failed_checks.append(("StorageClass", "kubectl get storageclass", stderr))
+        all_ok = False
+
+    # Print detailed failures
+    if failed_checks:
+        console.print("\n[bold red]Failed Checks Detail:[/bold red]")
+        for label, cmd, output in failed_checks:
+            console.print(f"\n[yellow]{label}[/yellow]: {cmd}")
+            if output.strip():
+                console.print(f"[dim]{output[:500]}[/dim]")
 
     return all_ok

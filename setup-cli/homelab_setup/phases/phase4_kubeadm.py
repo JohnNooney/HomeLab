@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import platform
+import shutil
 from typing import Any
 
 import yaml
@@ -61,21 +63,95 @@ def run_phase4_kubeadm(config: dict[str, Any], project_root: str, force: bool = 
 
 
 def step_check_prerequisites() -> bool:
-    """Check that Ansible is installed locally."""
+    """Check that Ansible is installed locally. Install if missing."""
     step(1, "Check prerequisites")
 
-    if not check_local_tool("ansible"):
-        error("ansible not found in PATH. Install Ansible first:")
-        info("  brew install ansible")
-        info("  or: pip install ansible")
-        return False
+    if check_local_tool("ansible") and check_local_tool("ansible-playbook"):
+        success("Ansible is installed")
+        return True
 
-    if not check_local_tool("ansible-playbook"):
-        error("ansible-playbook not found in PATH")
-        return False
+    warn("Ansible not found in PATH")
 
-    success("Ansible is installed")
-    return True
+    system = platform.system()
+    if system == "Darwin":  # macOS
+        if check_local_tool("brew"):
+            info("Installing Ansible via Homebrew...")
+            try:
+                run_local("brew install ansible", stream=True)
+                success("Ansible installed via Homebrew")
+                return True
+            except Exception as exc:
+                error(f"Homebrew install failed: {exc}")
+        else:
+            warn("Homebrew not found. Install from https://brew.sh")
+    elif system == "Windows":
+        if check_local_tool("choco"):
+            info("Installing Ansible via Chocolatey...")
+            try:
+                run_local("choco install ansible -y", stream=True)
+                success("Ansible installed via Chocolatey")
+                # Refresh PATH
+                os.environ["PATH"] = os.environ.get("PATH", "") + r";C:\ProgramData\chocolatey\bin"
+                return True
+            except Exception as exc:
+                error(f"Chocolatey install failed: {exc}")
+        else:
+            warn("Chocolatey not found. Install from https://chocolatey.org")
+
+    # Fallback to pip
+    if check_local_tool("pip") or check_local_tool("pip3"):
+        pip_cmd = "pip3" if check_local_tool("pip3") else "pip"
+        if prompt_confirm("Install Ansible via pip?", default=True):
+            info(f"Installing Ansible via {pip_cmd}...")
+            try:
+                run_local(f"{pip_cmd} install ansible", stream=True)
+                success("Ansible installed via pip")
+                return True
+            except Exception as exc:
+                error(f"pip install failed: {exc}")
+
+    error("Could not install Ansible automatically. Please install manually:")
+    info("  macOS:   brew install ansible")
+    info("  Windows: choco install ansible")
+    info("  pip:     pip3 install ansible")
+    return False
+
+
+def _load_existing_inventory(inventory_path: str) -> dict | None:
+    """Load existing inventory file if it exists."""
+    if not os.path.exists(inventory_path):
+        return None
+    try:
+        with open(inventory_path, "r") as f:
+            return yaml.safe_load(f)
+    except Exception:
+        return None
+
+
+def _extract_inventory_info(inventory: dict | None) -> dict:
+    """Extract node count and IPs from inventory."""
+    if not inventory or "all" not in inventory:
+        return {"control_plane_ip": None, "worker_ips": [], "worker_count": 0}
+
+    children = inventory["all"].get("children", {})
+    control_plane = children.get("control_plane", {}).get("hosts", {})
+    workers = children.get("workers", {}).get("hosts", {})
+
+    control_plane_ip = None
+    if "k8s-control-01" in control_plane:
+        control_plane_ip = control_plane["k8s-control-01"].get("ansible_host")
+
+    worker_ips = []
+    for name, data in workers.items():
+        ip = data.get("ansible_host")
+        if ip:
+            worker_ips.append(ip)
+
+    return {
+        "control_plane_ip": control_plane_ip,
+        "worker_ips": worker_ips,
+        "worker_count": len(worker_ips),
+    }
 
 
 def step_generate_inventory(config: dict[str, Any], project_root: str) -> bool:
@@ -85,6 +161,48 @@ def step_generate_inventory(config: dict[str, Any], project_root: str) -> bool:
     cl = config["cluster"]
     px = config["proxmox"]
     inventory_path = os.path.join(project_root, "ansible", "inventory", "home.yml")
+
+    # Check existing inventory for sync issues
+    existing = _load_existing_inventory(inventory_path)
+    if existing:
+        existing_info = _extract_inventory_info(existing)
+        cli_info = {
+            "control_plane_ip": cl["control_plane_ip"],
+            "worker_ips": cl["worker_ips"],
+            "worker_count": cl["worker_count"],
+        }
+
+        mismatch = False
+        mismatches = []
+
+        if existing_info["control_plane_ip"] != cli_info["control_plane_ip"]:
+            mismatch = True
+            mismatches.append(
+                f"Control plane IP: {existing_info['control_plane_ip']} → {cli_info['control_plane_ip']}"
+            )
+
+        if existing_info["worker_count"] != cli_info["worker_count"]:
+            mismatch = True
+            mismatches.append(
+                f"Worker count: {existing_info['worker_count']} → {cli_info['worker_count']}"
+            )
+
+        if set(existing_info["worker_ips"]) != set(cli_info["worker_ips"]):
+            mismatch = True
+            mismatches.append(
+                f"Worker IPs: {existing_info['worker_ips']} → {cli_info['worker_ips']}"
+            )
+
+        if mismatch:
+            warn("Existing inventory differs from CLI configuration")
+            info(f"Inventory path: {inventory_path}")
+            console.print("[yellow]Differences found:[/yellow]")
+            for m in mismatches:
+                console.print(f"  • {m}")
+
+            if not prompt_confirm("Update inventory to match CLI configuration?", default=True):
+                warn("Using existing inventory (may cause deployment issues)")
+                return True
 
     # Build inventory structure
     inventory: dict = {
@@ -130,6 +248,8 @@ def step_generate_inventory(config: dict[str, Any], project_root: str) -> bool:
             f.write("---\n")
             yaml.dump(inventory, f, default_flow_style=False, sort_keys=False)
         success(f"Inventory written to {inventory_path}")
+        info(f"  Control plane: {cl['control_plane_ip']}")
+        info(f"  Workers ({cl['worker_count']}): {', '.join(cl['worker_ips']) if cl['worker_ips'] else 'None'}")
         return True
     except Exception as exc:
         error(f"Failed to write inventory: {exc}")
