@@ -221,23 +221,27 @@ def _step_deploy_cni(config: dict[str, Any]) -> bool:
 
     config["cluster"]["cni"] = cni.lower()
 
+    pod_cidr = config["cluster"].get("pod_network_cidr", "10.244.0.0/16")
+
     if not check_local_tool("helm") and cni == "Cilium":
         error("helm required for Cilium. Install: brew install helm")
         return False
 
     try:
         if cni == "Calico":
-            info("Deploying Calico with VXLAN overlay (BGP disabled)...")
+            info(f"Deploying Calico with VXLAN overlay (pod CIDR: {pod_cidr})...")
             run_local(
                 "kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.26.0/manifests/calico.yaml",
                 stream=True,
             )
             info("Configuring Calico for VXLAN mode...")
             # Disable BGP, enable VXLAN for Proxmox/home lab compatibility
+            # Set CALICO_IPV4POOL_CIDR to match kubeadm --pod-network-cidr
             run_local(
                 'kubectl set env daemonset/calico-node -n kube-system '
                 'CALICO_NETWORKING_BACKEND=vxlan '
-                'CALICO_IPV4POOL_VXLAN=Always',
+                'CALICO_IPV4POOL_VXLAN=Always '
+                f'CALICO_IPV4POOL_CIDR={pod_cidr}',
                 check=False,
             )
             run_local(
@@ -253,13 +257,14 @@ def _step_deploy_cni(config: dict[str, Any]) -> bool:
             if rc != 0:
                 warn("Calico pods not ready after 120s. Continuing but cluster may have networking issues.")
         else:
-            info("Deploying Cilium via Helm...")
+            info(f"Deploying Cilium via Helm (pod CIDR: {pod_cidr})...")
             run_local("helm repo add cilium https://helm.cilium.io/ 2>/dev/null || true")
             run_local("helm repo update")
             run_local(
                 "helm install cilium cilium/cilium "
                 "--namespace kube-system "
-                "--set operator.replicas=1",
+                "--set operator.replicas=1 "
+                f"--set ipam.operator.clusterPoolIPv4PodCIDRList={pod_cidr}",
                 stream=True,
             )
             info("Waiting for Cilium pods to be ready...")

@@ -231,6 +231,7 @@ def step_generate_inventory(config: dict[str, Any], project_root: str) -> bool:
                 "ansible_python_interpreter": "/usr/bin/python3",
                 "ansible_ssh_common_args": "-o StrictHostKeyChecking=no",
                 "ansible_ssh_private_key_file": px["ssh_key"],
+                "pod_cidr": cl.get("pod_network_cidr", "10.244.0.0/16"),
             },
         }
     }

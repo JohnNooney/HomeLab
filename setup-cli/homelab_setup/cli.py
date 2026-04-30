@@ -16,6 +16,7 @@ from homelab_setup.phases.phase3 import run_phase3
 from homelab_setup.phases.phase4_k3s import run_phase4_k3s
 from homelab_setup.phases.phase4_kubeadm import run_phase4_kubeadm
 from homelab_setup.phases.phase5 import run_phase5
+from homelab_setup.troubleshoot import run_troubleshoot
 from homelab_setup.utils import (
     check_local_tool,
     console,
@@ -112,6 +113,7 @@ def _interactive_menu(project_root: str) -> None:
         console.print("  [cyan]4f[/cyan]. Run All (Force — skip pre-flight checks)")
         console.print("  [cyan]5[/cyan]. Status Check")
         console.print("  [cyan]6[/cyan]. Reconfigure")
+        console.print("  [cyan]7[/cyan]. Troubleshoot")
         console.print("  [cyan]0[/cyan]. Exit")
         console.print()
 
@@ -139,6 +141,8 @@ def _interactive_menu(project_root: str) -> None:
             _run_status_check(config)
         elif choice == "6":
             config = gather_config(project_root)
+        elif choice == "7":
+            run_troubleshoot(config)
         elif choice == "0":
             console.print("[dim]Goodbye![/dim]")
             break
@@ -224,3 +228,12 @@ def configure(ctx: click.Context) -> None:
     """Interactively reconfigure settings."""
     project_root = ctx.obj["project_root"]
     gather_config(project_root)
+
+
+@main.command()
+@click.pass_context
+def troubleshoot(ctx: click.Context) -> None:
+    """Interactive troubleshooting for cluster issues."""
+    project_root = ctx.obj["project_root"]
+    config = load_config(project_root)
+    run_troubleshoot(config)

@@ -36,6 +36,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "network_subnet": "192.168.100.0/24",
         "dns": "8.8.8.8",
         "cni": "flannel",
+        "pod_network_cidr": "10.244.0.0/16",
         "template_id": 9000,
         "vm_start_id": 101,
         "cloud_image_url": "https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img",

@@ -3,7 +3,7 @@
   hosts: control_plane
   become: yes
   vars:
-    pod_network_cidr: "10.244.0.0/16"
+    pod_network_cidr: "{{ pod_cidr | default('10.244.0.0/16') }}"
     kubernetes_api_server_advertise_address: "{{ ansible_host }}"
   tasks:
     - name: Check if Kubernetes is already initialized

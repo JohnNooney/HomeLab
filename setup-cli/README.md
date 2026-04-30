@@ -46,6 +46,7 @@ homelab-setup phase5 -f
 # Utilities
 homelab-setup status                 # Quick cluster health check
 homelab-setup configure              # Reconfigure settings
+homelab-setup troubleshoot           # Interactive troubleshooting menu
 ```
 
 ## What Each Phase Does
