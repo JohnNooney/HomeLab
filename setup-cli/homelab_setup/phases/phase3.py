@@ -62,26 +62,73 @@ def run_phase3(config: dict[str, Any], force: bool = False) -> bool:
 
 
 def step_ssh_key_setup(config: dict[str, Any]) -> bool:
-    """Step 1: Generate SSH keypair if not exists."""
+    """Step 1: Generate SSH keypair and verify Proxmox access."""
+    from homelab_setup.ssh import SSHClient
+    from homelab_setup.utils import prompt_confirm
+
     step(1, "SSH key setup")
     key_path = config["proxmox"]["ssh_key"]
     expanded = os.path.expanduser(key_path)
+    pub_path = f"{expanded}.pub"
+    px = config["proxmox"]
 
-    if os.path.exists(expanded):
-        success(f"SSH key already exists: {key_path}")
-        with open(f"{expanded}.pub", "r") as f:
+    # Generate key if needed
+    if not os.path.exists(expanded):
+        info(f"Generating SSH keypair at {key_path}")
+        try:
+            pub_key = generate_ssh_keypair(key_path)
+            success(f"SSH keypair generated: {key_path}")
+        except Exception as exc:
+            error(f"Failed to generate SSH key: {exc}")
+            return False
+    else:
+        with open(pub_path, "r") as f:
             pub_key = f.read().strip()
-        info(f"Public key: {pub_key[:60]}...")
-        return True
+        success(f"SSH key already exists: {key_path}")
 
-    info(f"Generating SSH keypair at {key_path}")
+    info(f"Public key: {pub_key[:60]}...")
+
+    # Test connection to Proxmox
+    info("Testing SSH connection to Proxmox...")
     try:
-        pub_key = generate_ssh_keypair(key_path)
-        success(f"SSH keypair generated: {key_path}")
-        info(f"Public key: {pub_key[:60]}...")
-        return True
+        with SSHClient(host=px["host"], user=px["user"], key_path=px["ssh_key"], timeout=10) as ssh:
+            success("SSH key authentication working!")
+            return True
+    except Exception:
+        warn("SSH key authentication failed.")
+
+    # Show instructions for manual key setup
+    console.print("\n[bold yellow]Manual SSH Key Setup Required[/bold yellow]")
+    console.print("""
+The Proxmox server doesn't have your SSH public key yet.
+You need to add it manually before proceeding.
+
+[bold]Option 1: Copy via SSH with password (if enabled):[/bold]
+    ssh-copy-id -i {key_path}.pub root@{host}
+
+[bold]Option 2: SSH and add manually:[/bold]
+    ssh root@{host}
+    mkdir -p ~/.ssh
+    echo '{pub_key}' >> ~/.ssh/authorized_keys
+    chmod 600 ~/.ssh/authorized_keys
+    chmod 700 ~/.ssh
+
+[bold]Your public key:[/bold]
+    {pub_key}
+""".format(key_path=key_path, host=px["host"], pub_key=pub_key))
+
+    if not prompt_confirm("Have you added the SSH key to Proxmox?", default=False):
+        warn("SSH key setup incomplete. Cannot proceed without key authentication.")
+        return False
+
+    # Re-test connection
+    info("Re-testing SSH connection...")
+    try:
+        with SSHClient(host=px["host"], user=px["user"], key_path=px["ssh_key"], timeout=10) as ssh:
+            success("SSH key authentication now working!")
+            return True
     except Exception as exc:
-        error(f"Failed to generate SSH key: {exc}")
+        error(f"SSH connection still failing: {exc}")
         return False
 
 

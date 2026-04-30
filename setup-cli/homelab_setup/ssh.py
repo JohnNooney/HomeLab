@@ -253,13 +253,31 @@ def generate_ssh_keypair(key_path: str, comment: str = "homelab-dev") -> str:
 
     os.makedirs(os.path.dirname(key_path), exist_ok=True)
 
-    key = paramiko.Ed25519Key.generate()
-    key.write_private_key_file(key_path)
+    # Generate Ed25519 key using cryptography (paramiko doesn't have Ed25519Key.generate)
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives import serialization
+
+    private_key = Ed25519PrivateKey.generate()
+
+    # Write private key in OpenSSH format
+    private_pem = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.OpenSSH,
+        encryption_algorithm=serialization.NoEncryption()
+    )
+    with open(key_path, "wb") as f:
+        f.write(private_pem)
     os.chmod(key_path, 0o600)
 
-    pub_key = f"ssh-ed25519 {key.get_base64()} {comment}"
+    # Write public key in OpenSSH format
+    public_key = private_key.public_key()
+    public_bytes = public_key.public_bytes(
+        encoding=serialization.Encoding.OpenSSH,
+        format=serialization.PublicFormat.OpenSSH
+    )
+    pub_key_str = f"{public_bytes.decode()} {comment}"
     with open(pub_path, "w") as f:
-        f.write(pub_key + "\n")
+        f.write(pub_key_str + "\n")
     os.chmod(pub_path, 0o644)
 
-    return pub_key
+    return pub_key_str
