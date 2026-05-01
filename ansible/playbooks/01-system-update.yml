@@ -157,6 +157,53 @@
         port: '30000:32767'
         proto: tcp
 
+    # ─── CNI overlay & Cilium ────────────────────────────────────────────
+    # Without these, CNI control-plane works but pod-to-pod traffic across
+    # nodes is silently dropped by UFW's default-deny INPUT policy.
+
+    - name: Allow VXLAN overlay (Flannel / Cilium default)
+      ufw:
+        rule: allow
+        port: '8472'
+        proto: udp
+
+    - name: Allow Geneve overlay (Cilium alternative)
+      ufw:
+        rule: allow
+        port: '6081'
+        proto: udp
+
+    - name: Allow Cilium health checks
+      ufw:
+        rule: allow
+        port: '4240'
+        proto: tcp
+
+    - name: Allow Hubble (Cilium observability)
+      ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop:
+        - '4244'   # hubble server
+        - '4245'   # hubble relay
+
+    - name: Allow Cilium metrics / envoy
+      ufw:
+        rule: allow
+        port: '9962:9965'
+        proto: tcp
+
+    - name: Allow pod CIDR traffic (inter-pod via host)
+      ufw:
+        rule: allow
+        from_ip: "{{ pod_cidr | default('10.244.0.0/16') }}"
+
+    - name: Allow service CIDR traffic
+      ufw:
+        rule: allow
+        from_ip: "{{ service_cidr | default('10.96.0.0/12') }}"
+
     - name: Enable UFW
       ufw:
         state: enabled
