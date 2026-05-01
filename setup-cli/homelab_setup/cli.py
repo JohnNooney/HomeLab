@@ -16,6 +16,7 @@ from homelab_setup.phases.phase3 import run_phase3
 from homelab_setup.phases.phase4_k3s import run_phase4_k3s
 from homelab_setup.phases.phase4_kubeadm import run_phase4_kubeadm
 from homelab_setup.phases.phase5 import run_phase5
+from homelab_setup.phases.phase_teardown import run_teardown
 from homelab_setup.troubleshoot import run_troubleshoot
 from homelab_setup.utils import (
     check_local_tool,
@@ -114,6 +115,7 @@ def _interactive_menu(project_root: str) -> None:
         console.print("  [cyan]5[/cyan]. Status Check")
         console.print("  [cyan]6[/cyan]. Reconfigure")
         console.print("  [cyan]7[/cyan]. Troubleshoot")
+        console.print("  [cyan]8[/cyan]. Teardown (Destroy K8s VMs)")
         console.print("  [cyan]0[/cyan]. Exit")
         console.print()
 
@@ -143,6 +145,8 @@ def _interactive_menu(project_root: str) -> None:
             config = gather_config(project_root)
         elif choice == "7":
             run_troubleshoot(config)
+        elif choice == "8":
+            run_teardown(config)
         elif choice == "0":
             console.print("[dim]Goodbye![/dim]")
             break
@@ -237,6 +241,22 @@ def troubleshoot(ctx: click.Context) -> None:
     project_root = ctx.obj["project_root"]
     config = load_config(project_root)
     run_troubleshoot(config)
+
+
+@main.command()
+@click.option("--template", "-t", is_flag=True, help="Also delete the VM template")
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
+@click.pass_context
+def teardown(ctx: click.Context, template: bool, yes: bool) -> None:
+    """Teardown: Destroy all K8s VMs on Proxmox."""
+    project_root = ctx.obj["project_root"]
+    config = load_config(project_root)
+
+    if not config["proxmox"]["host"]:
+        error("No Proxmox configuration found. Run 'setup-cli configure' first.")
+        return
+
+    run_teardown(config, delete_template=template, force=yes)
 
 
 @main.command()
