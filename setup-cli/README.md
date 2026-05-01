@@ -111,6 +111,18 @@ cluster:
 
 - **Python 3.9+**
 - **SSH access** to your Proxmox node
-- **kubectl** (for Phase 5 validation)
-- **Helm 3+** (for kubeadm path CNI/ingress, or optional nginx swap on k3s)
-- **Ansible** (only for multi-node/kubeadm path)
+
+### Auto-Installed Dependencies
+
+The CLI will automatically install the following tools if not present:
+
+| Tool | Phase Used | Install Methods (in order) |
+|------|------------|---------------------------|
+| **Ansible** | Phase 4 (kubeadm only) | Homebrew (macOS) → Chocolatey (Windows) → pip |
+| **kubectl** | Phase 5 | Homebrew → Chocolatey → direct download to `~/.local/bin` |
+| **Helm** | Phase 5 | Homebrew → Chocolatey → official install script |
+
+Manual install instructions if auto-install fails:
+- **macOS**: `brew install ansible kubectl helm`
+- **Windows**: `choco install ansible kubernetes-cli kubernetes-helm`
+- **pip**: `pip3 install ansible` (for kubectl/helm, use direct download methods)
