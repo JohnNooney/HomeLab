@@ -251,11 +251,13 @@ def troubleshoot_networking(config: dict[str, Any]) -> None:
     else:
         warn("Could not read CoreDNS configmap")
 
-    # DNS: internal resolution
-    info("Testing internal DNS (kubernetes.default)...")
+    # DNS: internal resolution.
+    # Use FQDN so the test doesn't depend on the pod's resolv.conf search list
+    # being correctly populated by kubelet (a separate failure mode).
+    info("Testing internal DNS (kubernetes.default.svc.cluster.local)...")
     rc, stdout, stderr = run_local(
         "kubectl run dns-diag --image=busybox:1.36 --rm -i --restart=Never "
-        "--timeout=30s -- nslookup kubernetes.default 2>/dev/null",
+        "--timeout=30s -- nslookup kubernetes.default.svc.cluster.local 2>/dev/null",
         check=False,
     )
     combined = (stdout + stderr).strip()
@@ -686,10 +688,26 @@ def _troubleshoot_cilium() -> None:
         if rc == 0 and stdout.strip():
             for line in stdout.strip().splitlines()[:15]:
                 console.print(f"    [dim]{line}[/dim]")
-            if kubeadm_cidr and kubeadm_cidr not in stdout:
-                warn(f"  Cilium may not be using kubeadm CIDR ({kubeadm_cidr})")
         else:
             warn("  Could not get cilium status")
+
+        # Verify Cilium's actual configured pod CIDR against kubeadm's.
+        # `cilium status --brief` only prints "OK", so we read the configmap.
+        if kubeadm_cidr:
+            rc_cm, cm_out, _ = run_local(
+                "kubectl -n kube-system get cm cilium-config "
+                "-o jsonpath='{.data.cluster-pool-ipv4-cidr}' 2>/dev/null",
+                check=False,
+            )
+            cilium_cidr = cm_out.strip().strip("'\"")
+            if rc_cm == 0 and cilium_cidr:
+                if cilium_cidr == kubeadm_cidr:
+                    success(f"Cilium pod CIDR matches kubeadm ({cilium_cidr})")
+                else:
+                    warn(
+                        f"  Cilium pod CIDR ({cilium_cidr}) differs from "
+                        f"kubeadm ({kubeadm_cidr})"
+                    )
 
         # Cilium health
         info("Cilium health status:")

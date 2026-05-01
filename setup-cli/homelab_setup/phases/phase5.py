@@ -408,19 +408,24 @@ def _step_validation_checklist() -> bool:
         all_ok = False
 
     # Check 3: DNS Resolution
+    # Use FQDN to avoid dependence on resolv.conf search domains, and look for
+    # the cluster's kube-dns service IP (10.96.0.10) in the answer.
     rc, stdout, stderr = run_local(
-        "kubectl run dns-test --image=busybox --rm -i --restart=Never -- nslookup kubernetes.default",
+        "kubectl run dns-test --image=busybox:1.36 --rm -i --restart=Never "
+        "--timeout=30s -- nslookup kubernetes.default.svc.cluster.local",
         check=False
     )
-    if rc == 0 and "kubernetes.default" in stdout.lower() or "10.96" in stdout:
+    combined = (stdout + stderr).lower()
+    dns_ok = rc == 0 and ("address" in combined and "10.96.0.1" in combined)
+    if dns_ok:
         success("DNS resolution working")
     else:
         warn("DNS resolution — needs verification")
-        failed_checks.append(("DNS", "nslookup kubernetes.default", stderr or stdout))
+        failed_checks.append(("DNS", "nslookup kubernetes.default.svc.cluster.local", stderr or stdout))
         all_ok = False
         console.print("\n[dim]To verify DNS manually, run:[/dim]")
-        console.print("  kubectl run debug --image=busybox --rm -it --restart=Never -- nslookup kubernetes.default")
-        console.print("  kubectl run debug --image=busybox --rm -it --restart=Never -- nslookup google.com")
+        console.print("  kubectl run debug --image=busybox:1.36 --rm -it --restart=Never -- nslookup kubernetes.default.svc.cluster.local")
+        console.print("  kubectl run debug --image=busybox:1.36 --rm -it --restart=Never -- nslookup google.com")
         console.print("  kubectl get pods -n kube-system -l k8s-app=kube-dns")
         console.print("  kubectl logs -n kube-system -l k8s-app=kube-dns")
 
