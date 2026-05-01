@@ -331,14 +331,23 @@ def _check_pod_cidr_mismatch(config: dict[str, Any]) -> None:
 
     info(f"  kubeadm pod CIDR: {kubeadm_cidr}")
 
-    # Sample actual pod IPs from CNI-managed pods
+    # Sample actual pod IPs from CNI-managed pods.
+    # Parse JSON in Python and skip hostNetwork pods (etcd, apiserver, kube-proxy,
+    # cilium agents, etc.) — their podIP is the node IP and would falsely mismatch.
+    # kubectl's jsonpath filter expressions don't reliably support `!=` on missing
+    # fields, so we do the filtering here instead.
     rc, stdout, _ = run_local(
-        "kubectl get pods -n kube-system -o jsonpath="
-        "'{range .items[*]}{.status.podIP}{\"\\n\"}{end}' 2>/dev/null",
+        "kubectl get pods -A -o json 2>/dev/null",
         check=False,
     )
     if rc != 0 or not stdout.strip():
         info("  Could not read pod IPs for CIDR comparison")
+        return
+
+    try:
+        pod_data = json.loads(stdout)
+    except json.JSONDecodeError:
+        info("  Could not parse pod list for CIDR comparison")
         return
 
     try:
@@ -348,16 +357,25 @@ def _check_pod_cidr_mismatch(config: dict[str, Any]) -> None:
         return
 
     mismatched = []
-    for line in stdout.strip().splitlines():
-        ip_str = line.strip()
+    checked = 0
+    for pod in pod_data.get("items", []):
+        spec = pod.get("spec", {})
+        if spec.get("hostNetwork"):
+            continue
+        ip_str = (pod.get("status", {}) or {}).get("podIP") or ""
         if not ip_str:
             continue
         try:
             ip = ipaddress.ip_address(ip_str)
-            if ip not in expected_net:
-                mismatched.append(ip_str)
         except ValueError:
             continue
+        checked += 1
+        if ip not in expected_net:
+            mismatched.append(ip_str)
+
+    if checked == 0:
+        info("  No CNI-managed pod IPs found to compare (cluster may be empty)")
+        return
 
     if mismatched:
         error(f"Pod CIDR mismatch: {len(mismatched)} pod(s) have IPs outside {kubeadm_cidr}")
@@ -416,72 +434,114 @@ def _check_pod_to_pod_connectivity() -> None:
     """Test pod-to-pod connectivity across nodes."""
     info("Testing pod-to-pod connectivity...")
 
-    # Get node names
+    # Only use schedulable, Ready nodes that are NOT tainted with NoSchedule
+    # (skips control-plane nodes by default so test pods actually start).
     rc, stdout, _ = run_local(
-        "kubectl get nodes --no-headers -o custom-columns=NAME:.metadata.name",
+        "kubectl get nodes -o json 2>/dev/null",
         check=False,
     )
     if rc != 0 or not stdout.strip():
         warn("  Could not list nodes for connectivity test")
         return
 
-    nodes = [n.strip() for n in stdout.strip().splitlines() if n.strip()]
-    if len(nodes) < 2:
-        info("  Single-node cluster — skipping cross-node test")
+    try:
+        node_data = json.loads(stdout)
+    except json.JSONDecodeError:
+        warn("  Could not parse node list")
         return
 
-    node_a, node_b = nodes[0], nodes[1]
+    schedulable: list[str] = []
+    for item in node_data.get("items", []):
+        name = item.get("metadata", {}).get("name", "")
+        if not name:
+            continue
+        if item.get("spec", {}).get("unschedulable"):
+            continue
+        taints = item.get("spec", {}).get("taints") or []
+        if any(t.get("effect") in ("NoSchedule", "NoExecute") for t in taints):
+            continue
+        ready = any(
+            c.get("type") == "Ready" and c.get("status") == "True"
+            for c in item.get("status", {}).get("conditions", [])
+        )
+        if ready:
+            schedulable.append(name)
+
+    if len(schedulable) < 2:
+        info(
+            f"  Need ≥2 schedulable worker nodes for cross-node test "
+            f"(found {len(schedulable)}) — skipping"
+        )
+        return
+
+    node_a, node_b = schedulable[0], schedulable[1]
+
+    def _spawn(name: str, node: str) -> None:
+        run_local(
+            f"kubectl run {name} --image=busybox:1.36 --restart=Never "
+            f"--overrides='{{\"spec\":{{\"nodeName\":\"{node}\"}}}}' "
+            f"--command -- sleep 60",
+            check=False,
+        )
 
     try:
-        run_local(
-            f"kubectl run p2p-test-a --image=busybox:1.36 --restart=Never "
-            f"--overrides='{{\"spec\":{{\"nodeSelector\":{{\"kubernetes.io/hostname\":\"{node_a}\"}}}}}}' "
-            f"-- sleep 30",
-            check=False,
-        )
-        run_local(
-            f"kubectl run p2p-test-b --image=busybox:1.36 --restart=Never "
-            f"--overrides='{{\"spec\":{{\"nodeSelector\":{{\"kubernetes.io/hostname\":\"{node_b}\"}}}}}}' "
-            f"-- sleep 30",
-            check=False,
-        )
+        _spawn("p2p-test-a", node_a)
+        _spawn("p2p-test-b", node_b)
 
-        # Wait for pods to be running
-        run_local(
+        # Wait for both pods; capture rc so we can detect scheduling/pull failures.
+        rc_wait, _, _ = run_local(
             "kubectl wait --for=condition=ready pod/p2p-test-a pod/p2p-test-b "
-            "--timeout=30s 2>/dev/null",
+            "--timeout=60s",
             check=False,
         )
+        if rc_wait != 0:
+            error("Pod-to-pod test pods did not become Ready")
+            rc_desc, desc_out, _ = run_local(
+                "kubectl get pod p2p-test-a p2p-test-b "
+                "-o custom-columns=NAME:.metadata.name,NODE:.spec.nodeName,"
+                "PHASE:.status.phase,IP:.status.podIP,REASON:.status.reason "
+                "--no-headers 2>/dev/null",
+                check=False,
+            )
+            if rc_desc == 0 and desc_out.strip():
+                for line in desc_out.strip().splitlines():
+                    console.print(f"    [dim]{line}[/dim]")
+            console.print("    [yellow]Test inconclusive[/yellow] — pods never ran, so "
+                          "connectivity was not actually exercised.")
+            return
 
-        # Get pod B's IP
         rc, pod_b_ip, _ = run_local(
             "kubectl get pod p2p-test-b -o jsonpath='{.status.podIP}' 2>/dev/null",
             check=False,
         )
-        if rc == 0 and pod_b_ip.strip():
-            pod_b_ip = pod_b_ip.strip()
-            rc_ping, ping_out, _ = run_local(
-                f"kubectl exec p2p-test-a -- ping -c 3 -W 5 {pod_b_ip} 2>/dev/null",
-                check=False,
-            )
-            if rc_ping == 0:
-                success(f"Pod-to-pod connectivity OK ({node_a} → {node_b})")
-                for line in ping_out.strip().splitlines():
-                    if "rtt" in line or "round-trip" in line:
-                        console.print(f"    [dim]{line.strip()}[/dim]")
-            else:
-                error(f"Pod-to-pod connectivity FAILED ({node_a} → {node_b})")
-                console.print(f"    [dim]Could not ping {pod_b_ip} from {node_a}[/dim]")
-                console.print("    [yellow]Likely causes:[/yellow]")
-                console.print("    • CNI not routing cross-node traffic")
-                console.print("    • Pod CIDR mismatch")
-                console.print("    • Firewall blocking VXLAN/overlay traffic")
-        else:
+        if not (rc == 0 and pod_b_ip.strip()):
             warn("  Could not get pod B IP for connectivity test")
+            return
+
+        pod_b_ip = pod_b_ip.strip()
+        rc_ping, ping_out, ping_err = run_local(
+            f"kubectl exec p2p-test-a -- ping -c 3 -W 5 {pod_b_ip}",
+            check=False,
+        )
+        if rc_ping == 0:
+            success(f"Pod-to-pod connectivity OK ({node_a} → {node_b}, {pod_b_ip})")
+            for line in ping_out.strip().splitlines():
+                if "rtt" in line or "round-trip" in line:
+                    console.print(f"    [dim]{line.strip()}[/dim]")
+        else:
+            error(f"Pod-to-pod connectivity FAILED ({node_a} → {node_b})")
+            console.print(f"    [dim]Could not ping {pod_b_ip} from {node_a}[/dim]")
+            for line in (ping_out + ping_err).strip().splitlines()[-5:]:
+                if line.strip():
+                    console.print(f"    [dim]{line.strip()}[/dim]")
+            console.print("    [yellow]Likely causes:[/yellow]")
+            console.print("    • CNI not routing cross-node traffic (tunnel/overlay down)")
+            console.print("    • Firewall blocking VXLAN (UDP 8472) / Geneve (UDP 6081)")
+            console.print("    • Stale routes after CNI reconfigure — try rebooting nodes")
     finally:
         run_local(
             "kubectl delete pod p2p-test-a p2p-test-b "
-            "--force --grace-period=0 2>/dev/null",
+            "--force --grace-period=0 --ignore-not-found 2>/dev/null",
             check=False,
         )
 
