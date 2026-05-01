@@ -11,6 +11,7 @@ from homelab_setup.preflight import (
     evaluate_preflight,
 )
 from homelab_setup.ssh import SSHClient
+from homelab_setup.tool_installer import ensure_helm, ensure_kubectl
 from homelab_setup.utils import (
     check_local_tool,
     console,
@@ -46,6 +47,11 @@ def run_phase5(config: dict[str, Any], force: bool = False) -> bool:
 def _run_phase5_k3s(config: dict[str, Any], force: bool = False) -> bool:
     """Phase 5 for k3s — most services are bundled, just validate."""
     phase_header("Phase 5", "Bootstrap Cluster Services (k3s)")
+
+    # Ensure kubectl is installed
+    if not ensure_kubectl():
+        error("kubectl is required but could not be installed")
+        return False
 
     results = check_phase5_k3s(config)
     if evaluate_preflight("Phase 5 (k3s)", results, force):
@@ -145,6 +151,14 @@ def _step_k3s_optional_nginx(config: dict[str, Any]) -> bool:
 def _run_phase5_kubeadm(config: dict[str, Any], force: bool = False) -> bool:
     """Phase 5 for kubeadm — deploy CNI, ingress, storage."""
     phase_header("Phase 5", "Bootstrap Cluster Services (kubeadm)")
+
+    # Ensure kubectl and helm are installed
+    if not ensure_kubectl():
+        error("kubectl is required but could not be installed")
+        return False
+    if not ensure_helm():
+        error("helm is required but could not be installed")
+        return False
 
     results = check_phase5_kubeadm(config)
     if evaluate_preflight("Phase 5 (kubeadm)", results, force):
