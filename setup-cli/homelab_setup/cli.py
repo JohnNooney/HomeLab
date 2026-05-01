@@ -237,3 +237,54 @@ def troubleshoot(ctx: click.Context) -> None:
     project_root = ctx.obj["project_root"]
     config = load_config(project_root)
     run_troubleshoot(config)
+
+
+@main.command()
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt")
+@click.pass_context
+def fix_cilium(ctx: click.Context, yes: bool) -> None:
+    """Fix Cilium pod CIDR mismatch and restart dependent services."""
+    from homelab_setup.troubleshoot import _get_kubeadm_pod_cidr, _attempt_heal
+    from homelab_setup.utils import check_local_tool, info, error, success, prompt_confirm
+
+    project_root = ctx.obj["project_root"]
+    config = load_config(project_root)
+
+    kubeadm_cidr = _get_kubeadm_pod_cidr()
+    if not kubeadm_cidr:
+        error("Could not detect kubeadm pod CIDR")
+        return
+
+    info(f"Detected pod CIDR: {kubeadm_cidr}")
+
+    if not check_local_tool("helm"):
+        error("helm not found — required to upgrade Cilium")
+        return
+
+    if not yes and not prompt_confirm("Apply Cilium fixes?", default=True):
+        info("Aborted")
+        return
+
+    # 1. Upgrade Cilium with correct pod CIDR
+    heal_cmd = (
+        f"helm upgrade cilium cilium/cilium --namespace kube-system "
+        f"--set operator.replicas=1 "
+        f"--set ipam.operator.clusterPoolIPv4PodCIDRList={kubeadm_cidr} "
+        f"--reuse-values"
+    )
+    _attempt_heal("Upgrade Cilium with correct pod CIDR", heal_cmd)
+
+    # 2. Restart Cilium agents
+    _attempt_heal("Restart Cilium agents", "kubectl rollout restart daemonset cilium -n kube-system")
+
+    # 3. Restart CoreDNS
+    _attempt_heal("Restart CoreDNS", "kubectl rollout restart deployment coredns -n kube-system")
+
+    # 4. Restart ingress-nginx if installed
+    rc, _, _ = run_local("kubectl get deployment ingress-nginx-controller -n ingress-nginx 2>/dev/null", check=False)
+    if rc == 0:
+        _attempt_heal("Restart ingress-nginx", "kubectl rollout restart deployment ingress-nginx-controller -n ingress-nginx")
+    else:
+        info("ingress-nginx not found — skipping")
+
+    success("Cilium fix commands completed")
