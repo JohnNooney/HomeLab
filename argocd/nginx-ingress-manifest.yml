@@ -1,0 +1,19 @@
+project: default
+source:
+  repoURL: https://kubernetes.github.io/ingress-nginx
+  chart: ingress-nginx
+  targetRevision: 4.12.1
+  helm:
+    values: |-
+      controller:
+        service:
+          type: NodePort
+          nodePorts:
+            http: 30080
+            https: 30443
+destination:
+  server: https://kubernetes.default.svc
+  namespace: ingress-nginx
+syncPolicy:
+  syncOptions:
+    - CreateNamespace=true
