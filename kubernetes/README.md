@@ -209,95 +209,153 @@ kubectl get externalsecret
 kubectl describe externalsecret example-secret
 ```
 
-#### 3.4 Ingress Tunnel Connection
-**Purpose**: Establish connectivity between the on-premises cluster and the AWS EC2 ingress tunnel node.
+#### 3.4 Tailscale Subnet Router (k8s Control Plane)
+**Purpose**: Connect the k8s control plane to the same Tailscale network as the EC2 ingress tunnel, so the EC2 reverse proxy can forward traffic into the cluster over an encrypted private network.
 
-**Option A: WireGuard**
+> The EC2 ingress tunnel is already on Tailscale via `terraform/aws/modules/ingress_tunnel/user_data.sh`. This step joins the k8s control plane to the same tailnet.
 
-1. **Install WireGuard on cluster nodes**:
+**Step 1 — Generate a Tailscale auth key**
+
+In the [Tailscale admin console](https://login.tailscale.com/admin/settings/keys), generate a reusable (or one-off) auth key scoped to the same tailnet as the EC2 instance.
+
+**Step 2 — Install Tailscale on the control plane node**
 ```bash
-# On each node
-sudo apt install wireguard
-
-# Generate keys
-wg genkey | tee privatekey | wg pubkey > publickey
-```
-
-2. **Configure WireGuard**:
-```bash
-# /etc/wireguard/wg0.conf on cluster node
-[Interface]
-PrivateKey = <NODE_PRIVATE_KEY>
-Address = 10.0.0.2/24
-ListenPort = 51820
-
-[Peer]
-PublicKey = <EC2_PUBLIC_KEY>
-Endpoint = <EC2_ELASTIC_IP>:51820
-AllowedIPs = 10.0.0.0/24
-PersistentKeepalive = 25
-```
-
-3. **Start WireGuard**:
-```bash
-sudo wg-quick up wg0
-sudo systemctl enable wg-quick@wg0
-```
-
-**Option B: Tailscale**
-
-1. **Install Tailscale on cluster nodes**:
-```bash
+# On k8s-control-01
 curl -fsSL https://tailscale.com/install.sh | sh
+
+# Join the tailnet and advertise the pod CIDR and service CIDR as subnet routes
+sudo tailscale up \
+  --authkey="<your-auth-key>" \
+  --advertise-routes=10.244.0.0/16,10.96.0.0/12 \
+  --accept-dns=false
 ```
 
-2. **Authenticate and connect**:
+> `10.244.0.0/16` is the pod CIDR (set during kubeadm init via `pod_cidr` in the Ansible inventory).  
+> `10.96.0.0/12` is the kubeadm default service CIDR.
+
+**Step 3 — Approve the device and routes in the Tailscale admin console**
+- Go to [Machines](https://login.tailscale.com/admin/machines) and approve `k8s-control-01`
+- Under the device settings, enable the advertised subnet routes
+
+**Step 4 — Note the Tailscale IP**
 ```bash
-sudo tailscale up --advertise-routes=10.244.0.0/16
+# On k8s-control-01 — note the 100.x.x.x Tailscale IP
+tailscale status
+```
+> This IP is used in the EC2 nginx reverse proxy configuration (step 3.7).
+
+**Validation**:
+```bash
+# From the EC2 instance (via Tailscale SSH or AWS SSM), verify reachability
+ping <k8s-control-01-tailscale-ip>
+
+# Verify subnet routes are active
+tailscale status --peers
 ```
 
-3. **Deploy Tailscale operator in cluster** (optional):
-```bash
-# Add Tailscale Helm repo
-helm repo add tailscale https://pkgs.tailscale.com/helmcharts
-helm repo update
+---
 
-# Install Tailscale operator
-helm install tailscale-operator tailscale/tailscale-operator \
-  --namespace tailscale \
-  --create-namespace \
-  --set oauth.clientId=<CLIENT_ID> \
-  --set oauth.clientSecret=<CLIENT_SECRET>
+#### 3.5 nginx-ingress Controller (via ArgoCD)
+**Purpose**: Route inbound traffic from the EC2 reverse proxy to the correct application pod based on the HTTP `Host` header.
+
+Create `argocd/nginx-ingress-manifest.yml` (already in this repo) and apply it:
+```bash
+kubectl apply -f argocd/nginx-ingress-manifest.yml -n argocd
 ```
 
-**Configure Ingress Controller**:
-```bash
-# Install nginx-ingress-controller
-helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
-helm repo update
+This deploys nginx-ingress with `NodePort` services on fixed ports:
+- `30080` → HTTP
+- `30443` → HTTPS (TLS passthrough from EC2)
 
-helm install ingress-nginx ingress-nginx/ingress-nginx \
-  --namespace ingress-nginx \
-  --create-namespace \
-  --set controller.service.type=NodePort \
-  --set controller.service.nodePorts.http=30080 \
-  --set controller.service.nodePorts.https=30443
+**Validation**:
+```bash
+# Confirm NodePort services are assigned
+kubectl get svc -n ingress-nginx
+# Expected: 80:30080/TCP, 443:30443/TCP
+
+kubectl get pods -n ingress-nginx
+```
+
+---
+
+#### 3.6 cert-manager ClusterIssuer
+**Purpose**: Automatically provision Let's Encrypt TLS certificates for exposed applications. cert-manager is already deployed via ArgoCD — this step configures the ACME issuer.
+
+Apply the ClusterIssuer manifest (already in this repo):
+```bash
+kubectl apply -f terraform/homelab/cluster-issuer.yaml
 ```
 
 **Validation**:
 ```bash
-# Test tunnel connectivity
-ping <EC2_TUNNEL_IP>
+kubectl get clusterissuer letsencrypt-prod
+# Expected: READY = True
+```
 
-# Check ingress controller
-kubectl get pods -n ingress-nginx
-kubectl get svc -n ingress-nginx
+---
 
-# Test ingress routing
-kubectl create deployment test --image=nginx
-kubectl expose deployment test --port=80
-kubectl create ingress test --class=nginx --rule="test.yourdomain.com/*=test:80"
-curl http://test.yourdomain.com
+#### 3.7 EC2 nginx Reverse Proxy
+**Purpose**: Forward public internet traffic arriving at the Elastic IP (ports 80/443) to the nginx-ingress NodePort on the k8s control plane via Tailscale.
+
+SSH to the EC2 ingress tunnel instance (via Tailscale SSH or AWS SSM Session Manager) and run:
+```bash
+sudo dnf install -y nginx
+
+sudo tee /etc/nginx/nginx.conf > /dev/null <<'EOF'
+events {}
+stream {
+  upstream k8s_https {
+    server <k8s-control-01-tailscale-ip>:30443;
+  }
+  upstream k8s_http {
+    server <k8s-control-01-tailscale-ip>:30080;
+  }
+  server {
+    listen 443;
+    proxy_pass k8s_https;
+    proxy_timeout 600s;
+  }
+  server {
+    listen 80;
+    proxy_pass k8s_http;
+    proxy_timeout 600s;
+  }
+}
+EOF
+
+sudo nginx -t
+sudo systemctl enable --now nginx
+```
+
+Replace `<k8s-control-01-tailscale-ip>` with the `100.x.x.x` address noted in step 3.4.
+
+> **Note**: This is a TCP stream (passthrough) proxy — TLS terminates at nginx-ingress inside the cluster. cert-manager HTTP-01 challenges work transparently via the port 80 passthrough.
+
+**Validation**:
+```bash
+sudo systemctl status nginx
+curl -v http://<EC2-ELASTIC-IP>  # Should reach the cluster
+```
+
+---
+
+#### 3.8 Route53 Wildcard DNS Record
+**Purpose**: Route all `*.homelab.nooney.dev` requests to the EC2 Elastic IP. This is a one-time change — every new app you expose gets DNS automatically.
+
+This requires a Terraform change. Add the variable and record as described in `terraform/README.md` (section: Route53 Wildcard Record), then apply:
+```bash
+cd terraform/aws
+terraform plan -target=module.route53
+terraform apply -target=module.route53
+```
+
+**Validation**:
+```bash
+nslookup grafana.homelab.nooney.dev
+# Should resolve to the EC2 Elastic IP
+
+nslookup anything.homelab.nooney.dev
+# Should also resolve to the same EC2 Elastic IP (wildcard)
 ```
 
 ### Complete Bootstrap Deployment
@@ -381,4 +439,118 @@ aws secretsmanager list-secrets
 
 ### Next Steps
 
-After cluster bootstrapping is complete, proceed to **Phase 4: Application Deployment** to deploy your workloads using Terraform-managed Helm charts.
+After cluster bootstrapping is complete, proceed to **Phase 4: Application Deployment** to deploy your workloads via ArgoCD.
+
+---
+
+## Runbook: Exposing a New App via the Ingress Tunnel
+
+> **Prerequisites**: Sections 3.4–3.8 must be complete (one-time setup) before following this runbook.
+
+This is the repeatable process for routing a deployed application to a public `<app>.homelab.nooney.dev` URL. The wildcard DNS record and EC2 nginx proxy are already in place — for each new app you only need to add a Kubernetes Ingress resource.
+
+### What you need before starting
+- App already deployed to the cluster (via ArgoCD)
+- Kubernetes **Service name** and **port** the app exposes
+- Desired hostname: `<app>.homelab.nooney.dev`
+- The **namespace** the app is deployed in
+
+---
+
+### Step 1 — Add an Ingress resource to the app's Helm values
+
+In the ArgoCD app manifest (e.g. `argocd/<app>-manifest.yml`), add an `ingress` block under the helm values:
+
+```yaml
+ingress:
+  enabled: true
+  ingressClassName: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+  hosts:
+    - host: <app>.homelab.nooney.dev
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: <app>-tls
+      hosts:
+        - <app>.homelab.nooney.dev
+```
+
+**Grafana example** — add to the `helm.values` block in `argocd/prometheus-manifest.yml`:
+```yaml
+grafana:
+  ingress:
+    enabled: true
+    ingressClassName: nginx
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+    hosts:
+      - grafana.homelab.nooney.dev
+    tls:
+      - secretName: grafana-tls
+        hosts:
+          - grafana.homelab.nooney.dev
+```
+
+Apply / sync the ArgoCD application:
+```bash
+kubectl apply -f argocd/<app>-manifest.yml -n argocd
+
+# Or sync via CLI
+argocd app sync <app-name>
+```
+
+---
+
+### Step 2 — Verify the Ingress was created
+
+```bash
+kubectl get ingress -n <namespace>
+# Should show the hostname and ingressClassName: nginx
+
+kubectl describe ingress <app> -n <namespace>
+```
+
+---
+
+### Step 3 — Verify the TLS certificate is issued
+
+```bash
+# Certificate resource is created automatically by cert-manager
+kubectl get certificate -n <namespace>
+# Wait for READY = True
+
+# If not ready, inspect the challenge
+kubectl get certificaterequest -n <namespace>
+kubectl get challenge -n <namespace>
+kubectl describe challenge -n <namespace>
+```
+
+> **Troubleshooting certificate issuance**:
+> - Confirm port 80 is open in the EC2 Security Group (it is by default)
+> - Confirm nginx on EC2 is forwarding port 80 to the k8s node: `curl http://<app>.homelab.nooney.dev/.well-known/acme-challenge/test`
+> - Check cert-manager logs: `kubectl logs -n cert-manager -l app=cert-manager`
+
+---
+
+### Step 4 — Test end-to-end connectivity
+
+```bash
+# DNS should resolve to the EC2 Elastic IP
+nslookup <app>.homelab.nooney.dev
+
+# HTTPS should return the app (or a redirect)
+curl -v https://<app>.homelab.nooney.dev
+```
+
+---
+
+### Exposed Apps Reference
+
+| App | URL | Namespace | Service | Port |
+|-----|-----|-----------|---------|------|
+| Grafana | `grafana.homelab.nooney.dev` | `monitoring` | `prometheus-grafana` | `80` |
+| Prometheus | `prometheus.homelab.nooney.dev` | `monitoring` | `prometheus-kube-prometheus-prometheus` | `9090` |
+| Alertmanager | `alertmanager.homelab.nooney.dev` | `monitoring` | `prometheus-kube-prometheus-alertmanager` | `9093` |
