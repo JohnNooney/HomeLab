@@ -21,3 +21,4 @@ all:
     ansible_python_interpreter: /usr/bin/python3
     ansible_ssh_common_args: -o StrictHostKeyChecking=no
     ansible_ssh_private_key_file: ~/.ssh/homelab-dev
+    pod_cidr: 10.244.0.0/16
