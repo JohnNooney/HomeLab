@@ -16,6 +16,90 @@ This phase provisions the core AWS infrastructure required to support the HomeLa
   - EC2 instances
   - VPC networking components
 
+### AWS Service Account Setup
+
+Two IAM identities are required before running Terraform.
+
+#### Terraform Operator (IAM User)
+
+This user runs all Terraform operations locally.
+
+**Step 1 — Create the IAM user**
+```bash
+aws iam create-user --user-name homelab-terraform
+```
+> Take note of the `Arn` returned from this command as it will be needed in the next step for attaching the policy.
+
+**Step 2 — Attach a permissions policy**
+
+Use the `terraform-policy.json` in this directory to attach it to the `homelab-terraform` user:
+```bash
+aws iam create-policy \
+  --policy-name homelab-terraform-policy \
+  --policy-document file://terraform-policy.json
+
+aws iam attach-user-policy \
+  --user-name homelab-terraform \
+  --policy-arn arn:aws:iam::<ACCOUNT_ID>:policy/homelab-terraform-policy
+```
+
+**Step 3 — Generate access keys**
+```bash
+aws iam create-access-key --user-name homelab-terraform
+```
+
+**Step 4 — Configure the AWS CLI**
+```bash
+aws configure --profile homelab-terraform
+# Enter the access key ID, secret access key, region (eu-west-2), and output format (json)
+
+# Export the profile for Terraform to pick up
+export AWS_PROFILE=homelab-terraform
+```
+
+---
+
+#### External Secrets Operator — ESO (IAM User)
+
+This user is used by the External Secrets Operator running in the Kubernetes cluster to pull secrets from Secrets Manager.
+
+**Step 1 — Create the IAM user**
+```bash
+aws iam create-user --user-name homelab-eso
+```
+
+**Step 2 — Attach a read-only Secrets Manager policy**
+```bash
+aws iam put-user-policy \
+  --user-name homelab-eso \
+  --policy-name homelab-eso-secrets-read \
+  --policy-document '{
+    "Version": "2012-10-17",
+    "Statement": [{
+      "Effect": "Allow",
+      "Action": [
+        "secretsmanager:GetSecretValue",
+        "secretsmanager:DescribeSecret",
+        "secretsmanager:ListSecrets"
+      ],
+      "Resource": "arn:aws:secretsmanager:eu-west-2:*:secret:/homelab/*"
+    }]
+  }'
+```
+
+**Step 3 — Generate access keys and store in Kubernetes**
+```bash
+aws iam create-access-key --user-name homelab-eso
+# Store the output — these credentials are used by the ESO ClusterSecretStore
+
+kubectl create secret generic aws-credentials \
+  --namespace <namespace> \
+  --from-literal=access-key=<ACCESS_KEY_ID> \
+  --from-literal=secret-access-key=<SECRET_ACCESS_KEY>
+```
+
+---
+
 ### Deployment Steps
 
 #### 1.1 Terraform State Backend
@@ -29,9 +113,7 @@ terraform apply -target=module.state_backend
 ```
 
 **Resources Created**:
-- S3 bucket for Terraform state storage (with versioning enabled)
-- DynamoDB table for state locking
-- Appropriate IAM policies and encryption settings
+- S3 bucket for Terraform state storage (with versioning enabled, S3-native locking via `use_lockfile = true`)
 
 #### 1.2 DNS Infrastructure
 **Purpose**: Provision Route 53 hosted zones for domain management and DNS automation.
@@ -110,7 +192,6 @@ After successful deployment, Terraform will output:
 - Route 53 nameservers
 - EC2 ingress tunnel public IP
 - S3 state bucket name
-- DynamoDB lock table name
 - Secrets Manager ARNs
 
 ### Validation

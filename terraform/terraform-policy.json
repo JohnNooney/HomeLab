@@ -1,0 +1,60 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "S3State",
+      "Effect": "Allow",
+      "Action": ["s3:*"],
+      "Resource": [
+        "arn:aws:s3:::homelab-terraform-state-*",
+        "arn:aws:s3:::homelab-terraform-state-*/*"
+      ]
+    },
+    {
+      "Sid": "Route53",
+      "Effect": "Allow",
+      "Action": ["route53:*", "route53domains:*"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "SecretsManager",
+      "Effect": "Allow",
+      "Action": ["secretsmanager:*"],
+      "Resource": "arn:aws:secretsmanager:eu-west-2:*:secret:/homelab/*"
+    },
+    {
+      "Sid": "EC2",
+      "Effect": "Allow",
+      "Action": ["ec2:*"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "IAMInstanceProfiles",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateRole", "iam:DeleteRole", "iam:GetRole", "iam:TagRole",
+        "iam:AttachRolePolicy", "iam:DetachRolePolicy",
+        "iam:PutRolePolicy", "iam:DeleteRolePolicy", "iam:GetRolePolicy",
+        "iam:CreateInstanceProfile", "iam:DeleteInstanceProfile",
+        "iam:GetInstanceProfile", "iam:TagInstanceProfile",
+        "iam:AddRoleToInstanceProfile", "iam:RemoveRoleFromInstanceProfile",
+        "iam:PassRole",
+        "iam:ListAttachedRolePolicies", "iam:ListRolePolicies",
+        "iam:ListInstanceProfilesForRole"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "SSMParameterRead",
+      "Effect": "Allow",
+      "Action": ["ssm:GetParameter"],
+      "Resource": "arn:aws:ssm:eu-west-2::parameter/aws/service/ami-amazon-linux-latest/*"
+    },
+    {
+      "Sid": "CloudWatchLogs",
+      "Effect": "Allow",
+      "Action": ["logs:*", "cloudwatch:*"],
+      "Resource": "*"
+    }
+  ]
+}
