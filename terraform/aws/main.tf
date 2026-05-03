@@ -8,8 +8,11 @@ module "state_backend" {
 module "route53" {
   source = "./modules/route53"
 
-  domain_name  = var.domain_name
-  project_name = var.project_name
+  domain_name        = var.domain_name
+  project_name       = var.project_name
+  ingress_tunnel_eip = module.ingress_tunnel.public_ip
+
+  depends_on = [module.ingress_tunnel]
 }
 
 module "secrets" {

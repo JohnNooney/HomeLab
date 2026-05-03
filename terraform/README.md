@@ -116,7 +116,7 @@ terraform apply -target=module.state_backend
 - S3 bucket for Terraform state storage (with versioning enabled, S3-native locking via `use_lockfile = true`)
 
 #### 1.2 DNS Infrastructure
-**Purpose**: Provision Route 53 hosted zones for domain management and DNS automation.
+**Purpose**: Provision Route 53 hosted zones for domain management and DNS automation, including the wildcard `*.homelab.nooney.dev` A record that routes all homelab app traffic to the EC2 ingress tunnel.
 
 ```bash
 terraform plan -target=module.route53
@@ -124,13 +124,15 @@ terraform apply -target=module.route53
 ```
 
 **Resources Created**:
-- Route 53 public hosted zone(s) for your domain(s)
+- Route 53 public hosted zone for `nooney.dev`
 - NS records for domain delegation
-- Initial DNS records as needed
+- Wildcard A record: `*.homelab.nooney.dev` → EC2 Elastic IP
+
+> **Note**: The `ingress_tunnel` module must be applied first (step 1.4) since the wildcard record uses the EC2 Elastic IP as its value. Running `terraform apply` without `-target` handles this ordering automatically via `depends_on`.
 
 **Post-Deployment**:
 - Update your domain registrar with the Route 53 nameservers
-- Verify DNS propagation before proceeding
+- Verify DNS propagation: `nslookup grafana.homelab.nooney.dev` should return the EC2 Elastic IP
 
 #### 1.3 Secrets Management
 **Purpose**: Create AWS Secrets Manager entries for sensitive configuration data.
