@@ -1,0 +1,12 @@
+project: default
+source:
+  repoURL: https://kubernetes-sigs.github.io/headlamp/
+  targetRevision: 0.41.0
+  chart: headlamp
+destination:
+  server: https://kubernetes.default.svc
+  namespace: kube-system
+syncPolicy:
+  syncOptions:
+    - ServerSideApply=true
+    - CreateNamespace=true

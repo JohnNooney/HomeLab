@@ -1,0 +1,12 @@
+project: default
+source:
+  repoURL: https://charts.external-secrets.io
+  targetRevision: 2.4.1
+  chart: external-secrets
+destination:
+  server: https://kubernetes.default.svc
+  namespace: infrastructure
+syncPolicy:
+  syncOptions:
+    - ServerSideApply=true
+    - CreateNamespace=true
