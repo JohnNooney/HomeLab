@@ -1,0 +1,36 @@
+project: default
+source:
+  repoURL: https://prometheus-community.github.io/helm-charts
+  path: /
+  targetRevision: 84.5.0
+  helm:
+    parameters:
+      - name: prometheusOperator.admissionWebhooks.certManager.enabled
+        value: 'true'
+    values: |-
+      alertmanager:
+        config:
+          global:
+            resolve_timeout: 5m
+          route:
+            receiver: telegram-receiver
+            group_by: ['alertname']
+            routes:
+              - receiver: "telegram-receiver"
+                matchers:
+                  - alertname = "Watchdog"
+          receivers:
+            - name: telegram-receiver
+              telegram_configs:
+                - api_url: https://api.telegram.org
+                  bot_token: '<insert-bot-token>'
+                  chat_id: <insert-chat-id>
+                  send_resolved: true
+  chart: kube-prometheus-stack
+destination:
+  server: https://kubernetes.default.svc
+  namespace: monitoring
+syncPolicy:
+  syncOptions:
+    - CreateNamespace=true
+    - ServerSideApply=true
